@@ -1,0 +1,11 @@
+.dart_tool/
+build/
+.idea/
+*.iml
+node_modules/
+__pycache__/
+.pytest_cache/
+ml/output/
+.venv/
+.env
+readings*.csv

@@ -1,0 +1,44 @@
+[
+ {
+  "markerType": "Water Level",
+  "stationId": 153,
+  "stationName": "TAMAN SRI MUDA",
+  "station_Id": "3015432",
+  "stationStatus": 1,
+  "wL1Status": -1,
+  "wL2IsEnabled": false,
+  "wL2Status": -1,
+  "latitude": "3.037984",
+  "longitude": "101.534493",
+  "mainRiverBasin": "SG. KLANG",
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Water Level",
+  "stationId": 1101,
+  "stationName": "KG. JAWA (F2)",
+  "station_Id": "BKLG0008",
+  "stationStatus": 0,
+  "wL1Status": -1,
+  "wL2IsEnabled": false,
+  "wL2Status": -1,
+  "latitude": "3.012777778",
+  "longitude": "101.4963056",
+  "mainRiverBasin": null,
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Water Level",
+  "stationId": 1112,
+  "stationName": "BANDAR KLANG (F2)",
+  "station_Id": "BKLG0004",
+  "stationStatus": 1,
+  "wL1Status": -1,
+  "wL2IsEnabled": false,
+  "wL2Status": -1,
+  "latitude": "3.048111111",
+  "longitude": "101.4449722",
+  "mainRiverBasin": null,
+  "districtName": "KLANG"
+ }
+]

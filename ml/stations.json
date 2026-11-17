@@ -1,0 +1,9 @@
+[
+  {"id": "JHR-AWAT", "normal": 16.5, "alert": 18.0, "warning": 19.0, "danger": 19.95, "upstream": ["JHR-BULOH"]},
+  {"id": "JHR-BULOH", "normal": 6.0, "alert": 7.5, "warning": 8.2, "danger": 8.84},
+  {"id": "JHR-SEGKECIL", "normal": 5.5, "alert": 7.0, "warning": 8.0, "danger": 9.0},
+  {"id": "JHR-CHAAH", "normal": 3.0, "alert": 4.5, "warning": 5.2, "danger": 6.0},
+  {"id": "SGR-KAJANG", "normal": 21.0, "alert": 23.0, "warning": 24.0, "danger": 25.0},
+  {"id": "SGR-RANTAU", "normal": 4.0, "alert": 5.5, "warning": 6.5, "danger": 7.5},
+  {"id": "MLK-HAMPAR", "normal": 1.5, "alert": 2.5, "warning": 3.0, "danger": 3.5}
+]

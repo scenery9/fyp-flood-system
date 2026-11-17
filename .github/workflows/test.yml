@@ -1,0 +1,54 @@
+name: Tests
+on: [push, pull_request]
+
+jobs:
+  flood_core:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/flood_core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart pub get
+      - run: dart analyze
+      - run: dart test
+
+  access_rules:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: npm install
+      - run: npm test
+
+  ml:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  logger:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: logger
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q

@@ -1,0 +1,474 @@
+{
+  "schema": 1,
+  "generated_at": "2026-11-17T03:00:00Z",
+  "horizon_hours": 3,
+  "model": {
+    "name": "xgboost",
+    "version": "1"
+  },
+  "is_practice_data": true,
+  "stations": [
+    {
+      "station_id": "JHR-AWAT",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 18.38,
+      "predicted_level_m": 18.002,
+      "low_m": 17.964,
+      "high_m": 18.04,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "level_above_normal",
+          "value": 1.88,
+          "impact_m": -0.1913
+        },
+        {
+          "feature": "level_change_1h",
+          "value": -0.13,
+          "impact_m": -0.0631
+        },
+        {
+          "feature": "rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0518
+        },
+        {
+          "feature": "rain_sum_1h",
+          "value": 0.0,
+          "impact_m": -0.0482
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0101
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 106.8,
+          "impact_m": -0.0089
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 8.4,
+          "impact_m": 0.0056
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": 0.01,
+          "impact_m": -0.0056
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": 0.0,
+          "impact_m": -0.0044
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": 0.0,
+          "impact_m": -0.0005
+        },
+        {
+          "feature": "level_change_3h",
+          "value": -0.48,
+          "impact_m": 0.0001
+        }
+      ]
+    },
+    {
+      "station_id": "JHR-BULOH",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 5.84,
+      "predicted_level_m": 5.838,
+      "low_m": 5.8,
+      "high_m": 5.876,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "level_above_normal",
+          "value": -0.16,
+          "impact_m": 0.0662
+        },
+        {
+          "feature": "rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0453
+        },
+        {
+          "feature": "rain_sum_1h",
+          "value": 0.0,
+          "impact_m": -0.0433
+        },
+        {
+          "feature": "level_change_1h",
+          "value": 0.0,
+          "impact_m": 0.0203
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 0.0,
+          "impact_m": 0.0055
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": null,
+          "impact_m": -0.0044
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 0.0,
+          "impact_m": 0.0027
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": null,
+          "impact_m": -0.0027
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": null,
+          "impact_m": -0.0025
+        },
+        {
+          "feature": "level_change_3h",
+          "value": 0.01,
+          "impact_m": 0.002
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": null,
+          "impact_m": -0.001
+        }
+      ]
+    },
+    {
+      "station_id": "JHR-SEGKECIL",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 7.59,
+      "predicted_level_m": 7.131,
+      "low_m": 7.093,
+      "high_m": 7.168,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "level_above_normal",
+          "value": 2.09,
+          "impact_m": -0.2377
+        },
+        {
+          "feature": "level_change_1h",
+          "value": -0.18,
+          "impact_m": -0.0975
+        },
+        {
+          "feature": "rain_sum_1h",
+          "value": 0.0,
+          "impact_m": -0.0501
+        },
+        {
+          "feature": "rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0409
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": null,
+          "impact_m": -0.0106
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 95.5,
+          "impact_m": -0.0099
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": null,
+          "impact_m": -0.0052
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": null,
+          "impact_m": -0.0042
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 35.3,
+          "impact_m": -0.003
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": null,
+          "impact_m": -0.0013
+        },
+        {
+          "feature": "level_change_3h",
+          "value": 0.14,
+          "impact_m": 0.0008
+        }
+      ]
+    },
+    {
+      "station_id": "JHR-CHAAH",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 2.81,
+      "predicted_level_m": 2.813,
+      "low_m": 2.776,
+      "high_m": 2.851,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "level_above_normal",
+          "value": -0.19,
+          "impact_m": 0.0718
+        },
+        {
+          "feature": "rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0469
+        },
+        {
+          "feature": "rain_sum_1h",
+          "value": 0.0,
+          "impact_m": -0.0431
+        },
+        {
+          "feature": "level_change_1h",
+          "value": 0.0,
+          "impact_m": 0.0204
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 0.0,
+          "impact_m": 0.0054
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": null,
+          "impact_m": -0.0043
+        },
+        {
+          "feature": "level_change_3h",
+          "value": -0.02,
+          "impact_m": 0.0033
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": null,
+          "impact_m": -0.0027
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": null,
+          "impact_m": -0.0025
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 0.0,
+          "impact_m": 0.0024
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": null,
+          "impact_m": -0.001
+        }
+      ]
+    },
+    {
+      "station_id": "SGR-KAJANG",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 21.06,
+      "predicted_level_m": 21.019,
+      "low_m": 20.981,
+      "high_m": 21.056,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0448
+        },
+        {
+          "feature": "rain_sum_1h",
+          "value": 0.0,
+          "impact_m": -0.044
+        },
+        {
+          "feature": "level_above_normal",
+          "value": 0.06,
+          "impact_m": 0.025
+        },
+        {
+          "feature": "level_change_1h",
+          "value": -0.03,
+          "impact_m": 0.0227
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 0.0,
+          "impact_m": 0.0061
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": null,
+          "impact_m": -0.0044
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 0.0,
+          "impact_m": 0.0033
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": null,
+          "impact_m": -0.0028
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": null,
+          "impact_m": -0.0026
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": null,
+          "impact_m": -0.001
+        },
+        {
+          "feature": "level_change_3h",
+          "value": -0.07,
+          "impact_m": 0.0007
+        }
+      ]
+    },
+    {
+      "station_id": "SGR-RANTAU",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 3.79,
+      "predicted_level_m": 3.798,
+      "low_m": 3.76,
+      "high_m": 3.835,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "level_above_normal",
+          "value": -0.21,
+          "impact_m": 0.0785
+        },
+        {
+          "feature": "rain_sum_3h",
+          "value": 0.0,
+          "impact_m": -0.0483
+        },
+        {
+          "feature": "rain_sum_1h",
+          "value": 0.0,
+          "impact_m": -0.0434
+        },
+        {
+          "feature": "level_change_1h",
+          "value": 0.01,
+          "impact_m": 0.0203
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 0.0,
+          "impact_m": 0.0052
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": null,
+          "impact_m": -0.0043
+        },
+        {
+          "feature": "level_change_3h",
+          "value": -0.01,
+          "impact_m": 0.0029
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": null,
+          "impact_m": -0.0027
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 0.0,
+          "impact_m": 0.0026
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": null,
+          "impact_m": -0.0025
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": null,
+          "impact_m": -0.001
+        }
+      ]
+    },
+    {
+      "station_id": "MLK-HAMPAR",
+      "based_on": "2026-11-17T03:00:00Z",
+      "current_level_m": 1.5,
+      "predicted_level_m": 2.122,
+      "low_m": 2.084,
+      "high_m": 2.159,
+      "base_change_m": 0.0004,
+      "factors": [
+        {
+          "feature": "rain_sum_1h",
+          "value": 10.4,
+          "impact_m": 0.446
+        },
+        {
+          "feature": "rain_sum_3h",
+          "value": 19.8,
+          "impact_m": 0.0928
+        },
+        {
+          "feature": "level_above_normal",
+          "value": 0.0,
+          "impact_m": 0.0765
+        },
+        {
+          "feature": "rain_sum_6h",
+          "value": 19.8,
+          "impact_m": 0.0238
+        },
+        {
+          "feature": "rain_sum_24h",
+          "value": 19.8,
+          "impact_m": 0.0168
+        },
+        {
+          "feature": "level_change_3h",
+          "value": 0.07,
+          "impact_m": -0.0126
+        },
+        {
+          "feature": "level_change_1h",
+          "value": 0.1,
+          "impact_m": -0.0121
+        },
+        {
+          "feature": "up_rain_sum_3h",
+          "value": null,
+          "impact_m": -0.0032
+        },
+        {
+          "feature": "up_level_change_3h",
+          "value": null,
+          "impact_m": -0.0027
+        },
+        {
+          "feature": "up_rain_sum_6h",
+          "value": null,
+          "impact_m": -0.0025
+        },
+        {
+          "feature": "up_level_change_1h",
+          "value": null,
+          "impact_m": -0.0016
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+name: Log JPS Selangor readings
+
+# Every 15 minutes, at minutes 7, 22, 37 and 52 (quieter than :00 on GitHub).
+# GitHub may start a run late when it is busy, and turns scheduled runs off after
+# 60 days without a commit to the repository: commit at least once every 60 days,
+# or re-enable the workflow in the Actions tab.
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: log-jps
+  cancel-in-progress: false
+
+jobs:
+  log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: logger
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: logger/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m jps_logger.collect
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

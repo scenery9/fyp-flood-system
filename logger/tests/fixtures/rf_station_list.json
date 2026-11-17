@@ -1,0 +1,74 @@
+[
+ {
+  "markerType": "Rainfall",
+  "stationId": 153,
+  "stationName": "TAMAN SRI MUDA",
+  "station_Id": "3015084",
+  "stationStatus": 1,
+  "status": 1,
+  "latitude": "3.037984",
+  "longitude": "101.534493",
+  "mainRiverBasin": "SG. KLANG",
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Rainfall",
+  "stationId": 207,
+  "stationName": "JALAN KEBUN",
+  "station_Id": "2915117",
+  "stationStatus": 1,
+  "status": 0,
+  "latitude": "2.981398",
+  "longitude": "101.506231",
+  "mainRiverBasin": "N/A",
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Rainfall",
+  "stationId": 214,
+  "stationName": "KG. DELEK",
+  "station_Id": "3014095",
+  "stationStatus": 1,
+  "status": 1,
+  "latitude": "3.0247718",
+  "longitude": "101.4110589",
+  "mainRiverBasin": "SG. KLANG",
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Rainfall",
+  "stationId": 229,
+  "stationName": "KG. JAWA, KLANG",
+  "station_Id": "3015088",
+  "stationStatus": 0,
+  "status": 1,
+  "latitude": "3.012756",
+  "longitude": "101.496334",
+  "mainRiverBasin": "SG. KANDIS",
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Rainfall",
+  "stationId": 1101,
+  "stationName": "KG. JAWA (F2)",
+  "station_Id": "BKLG0008",
+  "stationStatus": 0,
+  "status": -1,
+  "latitude": "3.012777778",
+  "longitude": "101.4963056",
+  "mainRiverBasin": null,
+  "districtName": "KLANG"
+ },
+ {
+  "markerType": "Rainfall",
+  "stationId": 1112,
+  "stationName": "BANDAR KLANG (F2)",
+  "station_Id": "BKLG0004",
+  "stationStatus": 1,
+  "status": 0,
+  "latitude": "3.048111111",
+  "longitude": "101.4449722",
+  "mainRiverBasin": null,
+  "districtName": "KLANG"
+ }
+]

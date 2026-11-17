@@ -1,0 +1,157 @@
+{
+ "dateList": [
+  "11/11/2026",
+  "12/11/2026",
+  "13/11/2026",
+  "14/11/2026",
+  "15/11/2026",
+  "16/11/2026",
+  "17/11/2026"
+ ],
+ "stations": [
+  {
+   "markerType": "Rainfall",
+   "id": 153,
+   "stationId": "3015084",
+   "stationName": "TAMAN SRI MUDA",
+   "districtName": "KLANG",
+   "lastUpdate": "17/11/2026 14:45:00",
+   "previousReadings": [
+    {
+     "dailyRainfall": 24,
+     "dataDate": "11/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "12/11/2026"
+    },
+    {
+     "dailyRainfall": 6,
+     "dataDate": "13/11/2026"
+    },
+    {
+     "dailyRainfall": 5,
+     "dataDate": "14/11/2026"
+    },
+    {
+     "dailyRainfall": 16.5,
+     "dataDate": "15/11/2026"
+    },
+    {
+     "dailyRainfall": 16.5,
+     "dataDate": "16/11/2026"
+    },
+    {
+     "dailyRainfall": 33.5,
+     "dataDate": "17/11/2026"
+    }
+   ],
+   "hourlyRainfall": 24.5,
+   "todayRainfall": 33.5,
+   "stationCode": "BKLG0002L",
+   "referenceName": "TMNSRIMUDA",
+   "mode": true,
+   "z1": true,
+   "z2": true,
+   "z3": true,
+   "batteryLevel": 24.8,
+   "stationStatus": 1
+  },
+  {
+   "markerType": "Rainfall",
+   "id": 207,
+   "stationId": "2915117",
+   "stationName": "JALAN KEBUN",
+   "districtName": "KLANG",
+   "lastUpdate": "17/11/2026 15:15:00",
+   "previousReadings": [
+    {
+     "dailyRainfall": 4,
+     "dataDate": "11/11/2026"
+    },
+    {
+     "dailyRainfall": 2.5,
+     "dataDate": "12/11/2026"
+    },
+    {
+     "dailyRainfall": 11.5,
+     "dataDate": "13/11/2026"
+    },
+    {
+     "dailyRainfall": 4.5,
+     "dataDate": "14/11/2026"
+    },
+    {
+     "dailyRainfall": 39.5,
+     "dataDate": "15/11/2026"
+    },
+    {
+     "dailyRainfall": 22.5,
+     "dataDate": "16/11/2026"
+    },
+    {
+     "dailyRainfall": 66.5,
+     "dataDate": "17/11/2026"
+    }
+   ],
+   "hourlyRainfall": 5,
+   "todayRainfall": 66.5,
+   "stationCode": "BKLG0016L",
+   "referenceName": "JALANKEBUN",
+   "mode": true,
+   "z1": true,
+   "z2": false,
+   "z3": true,
+   "batteryLevel": 13.2,
+   "stationStatus": 1
+  },
+  {
+   "markerType": "Rainfall",
+   "id": 229,
+   "stationId": "3015088",
+   "stationName": "KG. JAWA, KLANG",
+   "districtName": "KLANG",
+   "lastUpdate": "20/10/2025 18:15:00",
+   "previousReadings": [
+    {
+     "dailyRainfall": 0,
+     "dataDate": "11/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "12/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "13/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "14/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "15/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "16/11/2026"
+    },
+    {
+     "dailyRainfall": 0,
+     "dataDate": "17/11/2026"
+    }
+   ],
+   "hourlyRainfall": 27,
+   "todayRainfall": 33,
+   "stationCode": "BKLG0007L",
+   "referenceName": "KGJAWA",
+   "mode": true,
+   "z1": true,
+   "z2": true,
+   "z3": true,
+   "batteryLevel": 27.4,
+   "stationStatus": 0
+  }
+ ]
+}
