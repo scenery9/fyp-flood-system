@@ -1,9 +1,12 @@
+// TP96: a saved rain-only station leads with the rain on Home.
+// TP95: a centre over 150 km away gets a clear "too far" note, not a route.
 // TP94: Add an area by State, then District.
 // TP91: relief centres from places/centres.csv on screen: a centre whose
 // position was not checked, and capacity that is only an estimate.
 // Sample data; nothing is sent anywhere.
 import 'package:flood_app/app/app_controller.dart';
 import 'package:flood_app/app/sample_data.dart';
+import 'package:flood_app/screens/home/home_screen.dart';
 import 'package:flood_core/flood_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart' hide Table;
@@ -136,5 +139,31 @@ void main() {
       expect(find.descendant(of: find.byKey(const ValueKey('district-menu')), matching: find.text('All districts')), findsOneWidget);
     });
   });
-}
 
+  group('TP95 A centre too far for a route', () {
+    testWidgets('says it is too far and does not ask the route server', (tester) async {
+      final t = SampleData.centres() as MemoryTable<EvacuationPoint>;
+      // Georgetown, Penang: about 400 km from the sample phone near Segamat
+      await t.put('PPS-FAR', EvacuationPoint(id: 'PPS-FAR', name: 'Dewan Jauh', location: GeoPoint(5.414, 100.329), capacity: 100));
+      final app = TestApp(centres: t);
+      await app.start(tester);
+      final callsBefore = app.routes.calls;
+      final p = (await app.controller.evacuation.listAll()).firstWhere((c) => c.id == 'PPS-FAR');
+      final r = await app.controller.routeTo(p);
+      expect(r.plan, isNull);
+      expect(r.error, RouteError.tooFar);
+      expect(app.routes.calls, callsBefore, reason: 'the server refuses it anyway');
+    });
+  });
+
+  group('TP96 Home card for a rain gauge', () {
+    testWidgets('a rain-only station shows the rain, not "No recent data"', (tester) async {
+      await TestApp(followed: const ['MLK-DURIAN']).start(tester); // 65 mm/h, no river gauge
+      Finder inCard(String text) => find.descendant(of: find.byType(AreaCard), matching: find.text(text));
+      expect(inCard('Very heavy rain'), findsOneWidget);
+      expect(inCard('Rain gauge only, no river reading'), findsOneWidget);
+      expect(inCard('65.0 mm/h'), findsOneWidget);
+      expect(inCard('No recent data'), findsNothing);
+    });
+  });
+}

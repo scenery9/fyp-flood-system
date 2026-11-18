@@ -634,6 +634,8 @@ Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
 | TP92 | flood_core round8_test | each step's stretch of road; highlight follows the phone until chosen by hand; Next / Back stop at the ends |
 | TP93 | app round8_ui_test | Next / Back / tap a step move the highlight, read aloud only when Read aloud is on, each step shown once |
 | TP94 | app round8_ui_test | Add an area: State dropdown starts on the nearest station's state; District dropdown lists only that state's districts and resets when the state changes |
+| TP95 | app round8_ui_test | A centre over 150 km away (the route server's limit) gets "too far for a route in the app" and Google Maps, with no request to the server |
+| TP96 | app round8_ui_test | Home card for a saved rain-only station leads with the rain ("Very heavy rain", "Rain gauge only, no river reading") instead of "No recent data" |
 
 Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
 `npm test` in `supabase/test` (now five files), `python -m pytest` in `logger`.

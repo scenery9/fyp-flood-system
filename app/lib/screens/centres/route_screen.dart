@@ -208,6 +208,10 @@ class _RouteScreenState extends State<RouteScreen> {
                         "This centre's location has not been checked yet, so the app gives no route. Google Maps searches for it by name.",
                         'Lokasi pusat ini belum disemak, jadi aplikasi tidak memberi laluan. Google Maps mencarinya mengikut nama.',
                         '此中心的位置尚未核实，因此应用不提供路线。Google地图会按名称搜索。'),
+                    RouteError.tooFar => context.tr(
+                        'This centre is too far for a route in the app (over ${maxRouteKm.toStringAsFixed(0)} km). Use Google Maps for directions.',
+                        'Pusat ini terlalu jauh untuk laluan dalam aplikasi (lebih ${maxRouteKm.toStringAsFixed(0)} km). Guna Google Maps untuk arah.',
+                        '此中心太远，应用无法提供路线（超过 ${maxRouteKm.toStringAsFixed(0)} 公里）。请使用Google地图导航。'),
                     _ => context.tr('Could not get the road route. Check your internet.',
                         'Tidak dapat mendapatkan laluan jalan. Semak internet anda.', '无法取得道路路线，请检查网络。'),
                   },
@@ -235,7 +239,10 @@ class _RouteScreenState extends State<RouteScreen> {
                 ),
               ],
               const SizedBox(height: 16),
-              if (r != null && r.error != RouteError.notSetUp && r.error != RouteError.unchecked) ...[
+              if (r != null &&
+                  r.error != RouteError.notSetUp &&
+                  r.error != RouteError.unchecked &&
+                  r.error != RouteError.tooFar) ...[
                 FilledButton.icon(
                   key: ValueKey(plan == null ? 'route-retry' : 'route-update'),
                   onPressed: _updating ? null : () => _load(fresh: true),

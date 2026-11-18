@@ -240,10 +240,27 @@ class AreaCard extends StatelessWidget {
       nextLine = context.tr('Danger from ${metres(t.danger)}', 'Bahaya dari ${metres(t.danger)}', '${metres(t.danger)} 起为危险');
     }
     final distance = s.distanceKm == null ? '' : ' · ${s.distanceKm!.toStringAsFixed(1)} km';
-    final word = known ? context.levelName(s.level) : context.tr('No recent data', 'Tiada data terkini');
+    // A rain gauge with no river gauge: lead with the rain, not "No recent data".
+    final rainOnly = !known && t == null && s.riverLevel == null && s.rainfall != null && !s.isStale;
+    final heavyRain = rainOnly && (s.rainIntensity?.index ?? 0) >= RainIntensity.heavy.index;
+    final word = known
+        ? context.levelName(s.level)
+        : rainOnly
+            ? switch (s.rainIntensity) {
+                RainIntensity.light => context.tr('Light rain', 'Hujan renyai', '小雨'),
+                RainIntensity.moderate => context.tr('Moderate rain', 'Hujan sederhana', '中雨'),
+                RainIntensity.heavy => context.tr('Heavy rain', 'Hujan lebat', '大雨'),
+                RainIntensity.veryHeavy => context.tr('Very heavy rain', 'Hujan sangat lebat', '暴雨'),
+                _ => context.tr('No rain now', 'Tiada hujan sekarang', '目前无雨'),
+              }
+            : context.tr('No recent data', 'Tiada data terkini');
     final other = known
         ? (app.language == AppLanguage.ms ? s.level!.labelEn : s.level!.labelBm)
-        : (s.isStale ? context.tr('Last reading is too old to use', 'Bacaan terakhir terlalu lama') : context.tr('No river reading', 'Tiada bacaan sungai'));
+        : rainOnly
+            ? context.tr('Rain gauge only, no river reading', 'Tolok hujan sahaja, tiada bacaan sungai', '仅雨量站，无河水位读数')
+            : (s.isStale ? context.tr('Last reading is too old to use', 'Bacaan terakhir terlalu lama') : context.tr('No river reading', 'Tiada bacaan sungai'));
+    final wordColor = !rainOnly ? style.color : (heavyRain ? RiskStyle.of(RiskLevel.warning).color : c.primary);
+    final icon = rainOnly ? Icons.water_drop : style.icon;
 
     final value = s.riverLevel != null
         ? metres(s.riverLevel!)
@@ -308,9 +325,9 @@ class AreaCard extends StatelessWidget {
                   fitLine(s.station.name, context.text.titleMedium!),
                   oneLine('${s.station.district}, ${s.station.state}', context.text.bodyMedium!),
                   const SizedBox(height: 16),
-                  fitLine(word, context.text.displayMedium!.copyWith(color: style.color)),
+                  fitLine(word, context.text.displayMedium!.copyWith(color: wordColor)),
                   Row(children: [
-                    Icon(style.icon, color: style.color, size: 22),
+                    Icon(icon, color: wordColor, size: 22),
                     const SizedBox(width: 8),
                     Expanded(child: oneLine(other, context.text.titleLarge!.copyWith(color: c.textMuted, fontWeight: FontWeight.w400))),
                   ]),

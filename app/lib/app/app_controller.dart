@@ -126,7 +126,14 @@ enum RouteError {
 
   /// The centre's position has not been checked yet, so no route is given.
   unchecked,
+
+  /// The centre is over [maxRouteKm] away in a straight line; the route
+  /// server refuses those (supabase/functions/_shared/route.ts).
+  tooFar,
 }
+
+/// Same limit as the route server. Further centres get no in-app route.
+const maxRouteKm = 150.0;
 
 class RouteOutcome {
   const RouteOutcome({this.plan, this.error, this.savedAt, this.fromSaved = false});
@@ -513,6 +520,8 @@ class AppController extends ChangeNotifier {
   Future<RouteOutcome> routeTo(EvacuationPoint p, {bool fresh = false}) async {
     // No road route to a position nobody has checked (places/centres.csv).
     if (!p.locationChecked) return const RouteOutcome(error: RouteError.unchecked);
+    // The server would refuse it anyway; say so instead of "check your internet".
+    if (distanceKm(userLocation, p.location) > maxRouteKm) return const RouteOutcome(error: RouteError.tooFar);
     final provider = deps.routes;
     final saved = await savedRouteFor(p);
     if (provider == null) {
