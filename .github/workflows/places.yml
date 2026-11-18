@@ -1,0 +1,37 @@
+name: Upload relief centres and resource points
+
+# Runs when places/centres.csv or places/resource_points.csv changes on main
+# (or by hand from the Actions tab). Checks the files first; Supabase is only
+# changed when every row is valid. Uses the same secrets as the JPS logger.
+on:
+  push:
+    branches: [main]
+    paths: ['places/**']
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: places
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: logger
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: logger/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python -m jps_logger.places upload
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

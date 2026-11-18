@@ -1,4 +1,5 @@
 import 'package:flood_core/flood_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:material_ui/material_ui.dart';
 
 import 'app/app_controller.dart';
@@ -46,8 +47,9 @@ Future<void> main() async {
     profileStore: PhoneSettingsStore('household_profile'),
     progressStore: PhoneSettingsStore('checklist_progress'),
     contactStore: PhoneSettingsStore('emergency_contact'),
-    // Relief centres are still sample data in this version.
-    centres: SampleData.centres(),
+    // Relief centres from places/centres.csv (uploaded to Supabase); the last
+    // list is kept on the phone for use without internet. Sample ones otherwise.
+    centres: api == null ? SampleData.centres() : LiveCentreTable(api, store: PhoneSettingsStore('centres_live')),
     forecastSource: SampleForecastSource(),
     // Created once per app start, so an unlock lasts until the app is closed.
     lock: HouseholdLockService(PhoneSettingsStore('household_lock')),
@@ -64,6 +66,15 @@ Future<void> main() async {
     pushTokens: pushTokens,
     heights: HeightAlertStore(PhoneSettingsStore(live ? 'height_alerts_live' : 'height_alerts')),
     liveData: live,
+    flagsStore: PhoneSettingsStore('app_flags'),
+    // Routes to relief centres, kept for use without internet.
+    routeStore: PhoneSettingsStore(live ? 'saved_routes_live' : 'saved_routes'),
+    // Without Supabase, reports and the headcount stay on the phone (and the app says so).
+    reports: api == null ? null : SupabaseReportsBackend(api),
+    reportsStore: PhoneSettingsStore('reports_on_phone'),
+    contacts: kIsWeb ? null : DeviceContactPicker(),
+    // JPS data is logged every 15 minutes; reload as often while the app is open.
+    refreshEvery: const Duration(minutes: 15),
   ));
   runApp(FloodApp(controller: controller));
 }
@@ -98,7 +109,7 @@ class _FloodAppState extends State<FloodApp> {
         builder: (context, _) {
           final s = widget.controller.settings;
           return MaterialApp(
-            title: 'Flood Prepare',
+            title: 'FloodReady',
             scaffoldMessengerKey: messengerKey,
             debugShowCheckedModeBanner: false,
             theme: buildTheme(highContrast: s.highContrast),

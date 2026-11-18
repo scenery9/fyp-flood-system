@@ -1,6 +1,7 @@
 import 'package:flood_core/flood_core.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../widgets/river_gauge.dart';
 import 'app_controller.dart';
 
 /// The AI forecast in the app's language. English matches flood_core's
@@ -94,6 +95,11 @@ String forecastSpeech(BuildContext c, StationStatus s, StationForecast f) {
   final parts = <String>[
     s.station.name,
     forecastSummary(c, f),
+    if (s.riverLevel != null)
+      c.tr('Now ${m(s.riverLevel!)}. By ${forecastTime(c, f)}, about ${m(f.predictedLevelM)}.',
+          'Kini ${m(s.riverLevel!)}. Menjelang ${forecastTime(c, f)}, kira-kira ${m(f.predictedLevelM)}.',
+          '目前 ${m(s.riverLevel!)}。到 ${forecastTime(c, f)}，约 ${m(f.predictedLevelM)}。'),
+    if (s.riverLevel != null) '${changeLine(c, s, f)}.',
     c.tr('Likely between ${m(f.lowM)} and ${m(f.highM)}.', 'Mungkin antara ${m(f.lowM)} dan ${m(f.highM)}.',
         '可能介于 ${m(f.lowM)} 至 ${m(f.highM)}。'),
   ];

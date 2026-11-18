@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'helpers.dart';
 
-const details = 'Someone 60 or older';
+const details = 'Aged 60 or older';
 
 Future<void> openHousehold(WidgetTester tester) async {
   await openTab(tester, 'More');

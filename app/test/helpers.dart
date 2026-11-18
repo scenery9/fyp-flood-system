@@ -7,7 +7,8 @@ import 'package:flood_app/main.dart';
 import 'package:flood_app/security/phone_lock.dart';
 import 'package:flood_core/flood_core.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:material_ui/material_ui.dart';
+// Table also exists in Flutter; tests use flood_core's.
+import 'package:material_ui/material_ui.dart' hide Table;
 
 class FakePhoneLock implements PhoneLockChecker {
   FakePhoneLock({this.state = PhoneLock.ready, this.pass = true});
@@ -56,6 +57,13 @@ class FakeLocation implements LocationProvider {
   FakeLocation(this.fix);
   LocationFix fix;
   int asked = 0;
+
+  @override
+  GeoPoint get fallback => SampleData.userLocation;
+
+  /// The phone allows location when the next answer would be the real position.
+  @override
+  Future<bool> allowed() async => fix.issue == null;
   int prompted = 0;
   int settingsOpened = 0;
 
@@ -72,14 +80,32 @@ class FakeLocation implements LocationProvider {
 
 class FakeRoutes implements RouteProvider {
   bool fail = false;
+
+  /// Steps with openrouteservice step types (as the live server sends),
+  /// so the app words them itself in each language.
+  bool typed = false;
+  int calls = 0;
   @override
   Future<RoutePlan> route(GeoPoint from, GeoPoint to) async {
+    calls++;
     if (fail) throw RoutingException('offline');
     return RoutePlan(from: from, to: to, distanceM: 6200, durationS: 700, path: [from, to], steps: [
-      RouteStep(instruction: 'Head north on Jalan Awat', distanceM: 450, durationS: 60),
-      RouteStep(instruction: 'Turn left onto Jalan Buloh Kasap', distanceM: 5700, durationS: 620),
-      RouteStep(instruction: 'Arrive at SK Buloh Kasap', distanceM: 0, durationS: 0),
+      RouteStep(instruction: 'Head north on Jalan Awat', distanceM: 450, durationS: 60,
+          type: typed ? 11 : null, name: typed ? 'Jalan Awat' : null, wayPoint: 0),
+      RouteStep(instruction: 'Turn left onto Jalan Buloh Kasap', distanceM: 5700, durationS: 620,
+          type: typed ? 0 : null, name: typed ? 'Jalan Buloh Kasap' : null, wayPoint: 1),
+      RouteStep(instruction: 'Arrive at SK Buloh Kasap', distanceM: 0, durationS: 0, type: typed ? 10 : null, wayPoint: 1),
     ]);
+  }
+}
+
+class FakeContacts implements ContactPicker {
+  String? number = '019-876 5432';
+  int asked = 0;
+  @override
+  Future<String?> pickPhone() async {
+    asked++;
+    return number;
   }
 }
 
@@ -97,7 +123,16 @@ class TestApp {
     bool routesSetUp = true,
     this.pushTokens,
     this.push,
-  })  : profileStore = InMemorySettingsStore(profile == null ? {} : {...profile.toMap(), 'saved': 'true'}),
+    bool pushAskedBefore = true,
+    bool locationAskedBefore = true,
+    Map<String, String>? flags,
+    Table<EvacuationPoint>? centres,
+  })  : flagsStore = InMemorySettingsStore(flags ??
+            {
+              if (pushAskedBefore) 'pushAsked': 'true',
+              // Most tests are not about the "Use your location?" screen.
+              if (locationAskedBefore) 'locDontAsk': 'true',
+            }), profileStore = InMemorySettingsStore(profile == null ? {} : {...profile.toMap(), 'saved': 'true'}),
         progressStore = InMemorySettingsStore(),
         settingsStore = InMemorySettingsStore(settings),
         contactStore = InMemorySettingsStore(),
@@ -116,7 +151,7 @@ class TestApp {
       profileStore: profileStore,
       progressStore: progressStore,
       contactStore: contactStore,
-      centres: SampleData.centres(),
+      centres: centres ?? SampleData.centres(),
       forecastSource: SampleForecastSource(),
       lock: this.lock,
       phone: this.phone,
@@ -129,8 +164,17 @@ class TestApp {
       pushTokens: pushTokens,
       push: push,
       heights: HeightAlertStore(heightStore),
+      flagsStore: flagsStore,
+      routeStore: routeStore,
+      reportsStore: reportsStore,
+      contacts: contacts,
     ));
   }
+
+  final InMemorySettingsStore flagsStore;
+  final routeStore = InMemorySettingsStore();
+  final reportsStore = InMemorySettingsStore();
+  final contacts = FakeContacts();
 
   final InMemorySettingsStore profileStore;
   final InMemorySettingsStore progressStore;

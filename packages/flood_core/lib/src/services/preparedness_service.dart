@@ -12,6 +12,9 @@ class PrepItem {
     required this.title,
     required this.howTo,
     this.reason,
+    this.advice = false,
+    this.call,
+    this.bring = const [],
   });
 
   /// Unique across all levels, e.g. "alert.charge".
@@ -24,21 +27,36 @@ class PrepItem {
 
   /// Why this item is on the list for this household (null for everyone's items).
   final String? reason;
+
+  /// Advice to remember, not a task to tick ("Do not walk through flood
+  /// water"). Shown apart from the checklist and never counted as done.
+  final bool advice;
+
+  /// A number the item asks the user to call (one-tap call button).
+  final String? call;
+
+  /// "What to bring" for go-bag items, fitted to the household.
+  final List<String> bring;
 }
 
 typedef _When = bool Function(HouseholdProfile p);
 
 class _Def {
-  const _Def(this.id, this.level, this.title, this.howTo, {this.when, this.reason});
+  const _Def(this.id, this.level, this.title, this.howTo, {this.when, this.reason, this.advice = false, this.call, this.bring = false});
   final String id;
   final RiskLevel level;
   final Map<AppLanguage, String> title;
   final Map<AppLanguage, String> howTo;
   final _When? when;
   final _Reason? reason;
+  final bool advice;
+  final String? call;
+
+  /// Has the go-bag "What to bring" list.
+  final bool bring;
 }
 
-enum _Reason { olderAdult, youngChild, mobilityAid, dailyMedicine, pet, noTransport, leaveEarly }
+enum _Reason { olderAdult, youngChild, mobilityAid, dailyMedicine, pet, noTransport, leaveEarly, powerMachine }
 
 const _en = AppLanguage.en;
 const _ms = AppLanguage.ms;
@@ -174,6 +192,15 @@ class PreparednessService {
       _ms: 'Pastikan ia muat dalam kereta yang akan membawa anda, dan siapa yang akan membantu mengangkatnya.',
       _zh: '确认能放进载您的车，并安排谁来帮忙抬。',
     }, when: (p) => p.mobilityAid, reason: _Reason.mobilityAid),
+    _Def('alert.machine', RiskLevel.alert, {
+      _en: 'Charge the spare battery for the oxygen or machine',
+      _ms: 'Cas bateri simpanan untuk oksigen atau mesin',
+      _zh: '为氧气机或医疗设备的备用电池充电',
+    }, {
+      _en: 'Power may be cut. Tell the relief centre you need power for it.',
+      _ms: 'Bekalan elektrik mungkin terputus. Beritahu pusat pemindahan anda perlukan elektrik untuknya.',
+      _zh: '可能会停电。告知疏散中心您需要为它供电。',
+    }, when: (p) => p.powerMachine, reason: _Reason.powerMachine),
     _Def('alert.updates', RiskLevel.alert, {
       _en: 'Listen for official updates',
       _ms: 'Dengar maklumat rasmi',
@@ -217,10 +244,10 @@ class PreparednessService {
       _ms: 'Bawa beg kecemasan dan dokumen',
       _zh: '带上紧急包和文件',
     }, {
-      _en: 'Keep it with you, not in the boot of the car.',
-      _ms: 'Simpan bersama anda, bukan di dalam but kereta.',
-      _zh: '随身携带，不要放在车尾箱。',
-    }),
+      _en: 'Keep it with you, not in the boot of the car. Check it has everything below.',
+      _ms: 'Simpan bersama anda, bukan di dalam but kereta. Pastikan semua barang di bawah ada.',
+      _zh: '随身携带，不要放在车尾箱。检查下列物品是否齐全。',
+    }, bring: true),
     _Def('warning.vehicle', RiskLevel.warning, {
       _en: 'Move your vehicle to higher ground',
       _ms: 'Alihkan kenderaan ke tempat tinggi',
@@ -276,7 +303,7 @@ class PreparednessService {
       _en: 'Say your address, how many people, and who needs help.',
       _ms: 'Beritahu alamat, bilangan orang, dan siapa yang perlukan bantuan.',
       _zh: '说明地址、人数以及谁需要帮助。',
-    }),
+    }, advice: true, call: '999'),
     _Def('danger.water', RiskLevel.danger, {
       _en: 'Do not walk or drive through flood water',
       _ms: 'Jangan meredah air banjir',
@@ -285,7 +312,7 @@ class PreparednessService {
       _en: 'Fast water 15 cm deep can knock a person down.',
       _ms: 'Air deras sedalam 15 cm boleh menjatuhkan seseorang.',
       _zh: '15厘米深的急流就能把人冲倒。',
-    }),
+    }, advice: true),
     _Def('danger.high', RiskLevel.danger, {
       _en: 'If trapped, go to the highest floor',
       _ms: 'Jika terperangkap, naik ke tingkat paling atas',
@@ -294,8 +321,33 @@ class PreparednessService {
       _en: 'Take your phone and wait for rescue. Do not go into a closed attic.',
       _ms: 'Bawa telefon dan tunggu bantuan. Jangan masuk ke loteng tertutup.',
       _zh: '带上手机等待救援。不要进入封闭的阁楼。',
-    }),
+    }, advice: true),
   ];
+
+  /// Go-bag contents for everyone, then for this household's needs.
+  static List<String> _bring(HouseholdProfile? p, AppLanguage l) {
+    String t(String en, String ms, String zh) => switch (l) { _en => en, _ms => ms, _zh => zh };
+    return [
+      t('IC (MyKad), birth certificates and other documents in a waterproof bag', 'IC (MyKad), sijil kelahiran dan dokumen lain dalam beg kalis air',
+          '身份证（MyKad）、出生证明及其他文件，装在防水袋里'),
+      t('Phone, charger and power bank', 'Telefon, pengecas dan power bank', '手机、充电器和充电宝'),
+      t('Cash', 'Wang tunai', '现金'),
+      t('Drinking water and food that needs no cooking', 'Air minuman dan makanan yang tidak perlu dimasak', '饮用水和无需烹煮的食物'),
+      t('Torch with spare batteries', 'Lampu suluh dengan bateri ganti', '手电筒和备用电池'),
+      t('Clothes for 3 days and a towel', 'Pakaian untuk 3 hari dan tuala', '3天的衣物和毛巾'),
+      t('Toothbrush, soap and sanitary pads', 'Berus gigi, sabun dan tuala wanita', '牙刷、肥皂和卫生巾'),
+      if (p != null && p.dailyMedicine)
+        t('Medicine for 7 days and a copy of the prescription', 'Ubat untuk 7 hari dan salinan preskripsi', '7天的药物和处方副本'),
+      if (p != null && p.powerMachine)
+        t('Spare battery and charger for the oxygen or machine', 'Bateri simpanan dan pengecas untuk oksigen atau mesin', '氧气机或医疗设备的备用电池和充电器'),
+      if (p != null && p.youngChild)
+        t('Milk, bottles and nappies for the baby', 'Susu, botol dan lampin untuk bayi', '婴儿的奶粉、奶瓶和尿布'),
+      if (p != null && p.olderAdult)
+        t('Glasses, hearing aids and dentures', 'Cermin mata, alat bantu dengar dan gigi palsu', '眼镜、助听器和假牙'),
+      if (p != null && p.mobilityAid) t('Wheelchair or walking aid', 'Kerusi roda atau alat bantu jalan', '轮椅或助行器'),
+      if (p != null && p.pet) t('Pet food, water bowl and a lead or carrier', 'Makanan haiwan, bekas air dan tali atau bekas bawa', '宠物食物、水碗及牵绳或宠物笼'),
+    ];
+  }
 
   static const Map<_Reason, Map<AppLanguage, String>> _reasons = {
     _Reason.olderAdult: {_en: 'Because someone is 60 or older', _ms: 'Kerana ada yang berumur 60 tahun ke atas', _zh: '因为家中有60岁或以上的人'},
@@ -305,26 +357,36 @@ class PreparednessService {
     _Reason.pet: {_en: 'Because you have a pet', _ms: 'Kerana anda ada haiwan peliharaan', _zh: '因为您有宠物'},
     _Reason.noTransport: {_en: 'Because you have no own transport', _ms: 'Kerana anda tiada kenderaan sendiri', _zh: '因为您没有自己的交通工具'},
     _Reason.leaveEarly: {_en: 'Because your household needs more time to leave', _ms: 'Kerana isi rumah anda perlukan lebih masa untuk keluar', _zh: '因为您的家庭需要更多时间撤离'},
+    _Reason.powerMachine: {_en: 'Because someone uses oxygen or a machine that needs power', _ms: 'Kerana ada yang menggunakan oksigen atau mesin yang perlukan elektrik', _zh: '因为家中有人使用需要供电的氧气机或医疗设备'},
   };
 
   static String _pick(Map<AppLanguage, String> m, AppLanguage l) => m[l] ?? m[_en]!;
 
-  /// Items for [level]. With no [profile] (setup skipped) only the
-  /// items for every household are given.
+  /// Tasks to tick for [level]. With no [profile] (setup skipped) only the
+  /// items for every household are given. Advice is not included; see [advice].
   List<PrepItem> checklist(RiskLevel level, HouseholdProfile? profile,
-      {AppLanguage language = AppLanguage.en}) {
-    return [
-      for (final d in _defs)
-        if (d.level == level && (d.when == null || (profile != null && d.when!(profile))))
-          PrepItem(
-            id: d.id,
-            level: d.level,
-            title: _pick(d.title, language),
-            howTo: _pick(d.howTo, language),
-            reason: d.reason == null ? null : _pick(_reasons[d.reason]!, language),
-          ),
-    ];
-  }
+          {AppLanguage language = AppLanguage.en}) =>
+      _items(level, profile, language, advice: false);
+
+  /// Things to remember at [level] ("Do not walk through flood water"),
+  /// shown apart from the checklist and never ticked.
+  List<PrepItem> advice(RiskLevel level, HouseholdProfile? profile, {AppLanguage language = AppLanguage.en}) =>
+      _items(level, profile, language, advice: true);
+
+  List<PrepItem> _items(RiskLevel level, HouseholdProfile? profile, AppLanguage language, {required bool advice}) => [
+        for (final d in _defs)
+          if (d.level == level && d.advice == advice && (d.when == null || (profile != null && d.when!(profile))))
+            PrepItem(
+              id: d.id,
+              level: d.level,
+              title: _pick(d.title, language),
+              howTo: _pick(d.howTo, language),
+              reason: d.reason == null ? null : _pick(_reasons[d.reason]!, language),
+              advice: d.advice,
+              call: d.call,
+              bring: d.bring ? _bring(profile, language) : const [],
+            ),
+      ];
 
   /// Every item id that exists, for checking saved progress.
   static Set<String> get allIds => {for (final d in _defs) d.id};
@@ -360,6 +422,14 @@ class HouseholdService {
       throw ValidationException(
           'Number of people must be ${HouseholdProfile.minPeople} to ${HouseholdProfile.maxPeople}');
     }
+    if (p.babies < 0 || p.children < 0 || p.adults < 0 || p.elderly < 0 || p.mobility < 0 || p.pets < 0) {
+      throw ValidationException('Numbers cannot be negative');
+    }
+    if (p.grouped > p.people) {
+      throw ValidationException('Babies, children, adults and older people add up to more than ${p.people}');
+    }
+    if (p.mobility > p.people) throw ValidationException('People who need help moving cannot be more than ${p.people}');
+    if (p.pets > HouseholdProfile.maxPets) throw ValidationException('At most ${HouseholdProfile.maxPets} pets');
     await profileStore.save({...p.toMap(), _savedKey: 'true'});
     return p;
   }

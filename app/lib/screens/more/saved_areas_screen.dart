@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../app/app_controller.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/choices.dart';
 import '../../widgets/common.dart';
 import '../home/station_detail_screen.dart';
 
@@ -104,7 +105,8 @@ class _AreaRow extends StatelessWidget {
   }
 }
 
-/// Pick a station to save, with search by name, district or state.
+/// Pick a station to save: the nearest stations first, district buttons,
+/// and search as a last resort (no typing needed).
 class AddAreaScreen extends StatefulWidget {
   const AddAreaScreen({super.key});
 
@@ -114,33 +116,58 @@ class AddAreaScreen extends StatefulWidget {
 
 class _AddAreaScreenState extends State<AddAreaScreen> {
   String _query = '';
+  String? _district; // null = all districts
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final saved = {for (final a in app.areas) a.station.id};
     final q = _query.trim().toLowerCase();
+    final districts = {for (final s in app.statuses) s.station.district}.toList()..sort();
     final list = [
       for (final s in app.statuses)
         if (!saved.contains(s.station.id) &&
+            (_district == null || s.station.district == _district) &&
             (q.isEmpty ||
                 s.station.name.toLowerCase().contains(q) ||
                 s.station.district.toLowerCase().contains(q) ||
                 s.station.state.toLowerCase().contains(q)))
           s,
-    ];
+    ]
+      // Nearest first when the phone's location is known.
+      ..sort((a, b) {
+        final da = app.locationIssue == null ? a.distanceKm : null, db = app.locationIssue == null ? b.distanceKm : null;
+        if (da != null && db != null) return da.compareTo(db);
+        if (da != null) return -1;
+        if (db != null) return 1;
+        return a.station.name.compareTo(b.station.name);
+      });
     return SubPage(
       title: context.tr('Add an area', 'Tambah kawasan'),
       children: [
+        NoteText(app.locationIssue == null
+            ? context.tr('Nearest stations first. Tap Add on the one closest to your home.',
+                'Stesen paling dekat dahulu. Tekan Tambah pada stesen paling dekat dengan rumah anda.', '最近的测站在最前面。点击离您家最近测站的“添加”。')
+            : context.tr('Choose your district, then tap Add.', 'Pilih daerah anda, kemudian tekan Tambah.', '选择您的县区，然后点击“添加”。')),
         Padding(
-          padding: const EdgeInsets.fromLTRB(kMargin, 8, kMargin, 12),
+          padding: const EdgeInsets.fromLTRB(kMargin, 12, kMargin, 0),
+          child: ChoiceBoxes<String?>(
+            keyPrefix: 'district',
+            values: [null, ...districts],
+            selected: {_district},
+            label: (d) => d ?? context.tr('All', 'Semua', '全部'),
+            onTap: (d) => setState(() => _district = d),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kMargin, 12, kMargin, 12),
           child: TextField(
             key: const ValueKey('area-search'),
             onChanged: (v) => setState(() => _query = v),
             style: context.text.bodyLarge,
             decoration: InputDecoration(
               prefixIcon: const Icon(Icons.search),
-              hintText: context.tr('Search by place, district or state', 'Cari mengikut tempat, daerah atau negeri'),
+              hintText: context.tr('Or search by name', 'Atau cari mengikut nama', '或按名称搜索'),
               filled: true,
               fillColor: Colors.white,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -165,7 +192,12 @@ class _AddAreaScreenState extends State<AddAreaScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(list[i].station.name, style: context.text.titleMedium),
-                          Text('${list[i].station.district}, ${list[i].station.state}', style: context.text.bodyMedium),
+                          Text(
+                              [
+                                '${list[i].station.district}, ${list[i].station.state}',
+                                if (app.locationIssue == null && list[i].distanceKm != null) '${list[i].distanceKm!.toStringAsFixed(1)} km',
+                              ].join(' · '),
+                              style: context.text.bodyMedium!.copyWith(fontFeatures: AppText.tabular)),
                         ]),
                       ),
                     ),

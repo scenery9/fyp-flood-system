@@ -2,6 +2,7 @@
 // The alert server is a fake; nothing is sent anywhere.
 import 'package:flood_app/app/app_controller.dart';
 import 'package:flood_app/app/platform.dart';
+import 'package:flood_app/app/sample_data.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -37,9 +38,10 @@ void main() {
       expect(find.textContaining('even when the app is closed'), findsOneWidget);
       expect(server.calls.first.$1, 'register_device');
       expect(server.calls.first.$2['p_token'], 'fcm-test-token-0123456789');
+      // Warning by default; the nearest station (Kg. Awat) is already a saved area.
       expect(server.lastRules, [
-        {'station_code': 'JHR-AWAT', 'kind': 'risk', 'min_level': 'alert'},
-        {'station_code': 'JHR-BULOH', 'kind': 'risk', 'min_level': 'alert'},
+        {'station_code': 'JHR-AWAT', 'kind': 'risk', 'min_level': 'warning'},
+        {'station_code': 'JHR-BULOH', 'kind': 'risk', 'min_level': 'warning'},
       ]);
 
       await tapIt(tester, find.byKey(const ValueKey('notify-danger')));
@@ -72,7 +74,7 @@ void main() {
   });
 
   group('TP73 River-level alert', () {
-    testWidgets('set, show, change and remove a river height for a station', (tester) async {
+    testWidgets('pick a level (no typing), change it, remove it', (tester) async {
       final server = FakePushServer();
       final app = TestApp(
           followed: const ['JHR-AWAT'],
@@ -81,18 +83,17 @@ void main() {
       await app.start(tester);
       await tapIt(tester, find.text(buloh));
       await tapIt(tester, find.byKey(const ValueKey('height-alert')));
-      await tester.enterText(find.byKey(const ValueKey('height-field')), '8,1');
-      await tapIt(tester, find.byKey(const ValueKey('height-save')));
-      expect(app.controller.heights, {'JHR-BULOH': 8.1});
-      expect(find.text('River-level alert: 8.10 m'), findsOneWidget);
+      expect(find.text('From 8.20 m · suggested'), findsOneWidget);
+      expect(find.byKey(const ValueKey('height-field')), findsNothing, reason: 'nothing to type');
+      await tapIt(tester, find.byKey(const ValueKey('level-warning')));
+      expect(app.controller.heights, {'JHR-BULOH': 8.2});
+      expect(find.text('River-level alert: Warning (8.20 m)'), findsOneWidget);
       await waitForSnackBar(tester);
-      expect(server.lastRules.last, {'station_code': 'JHR-BULOH', 'kind': 'level', 'level_m': 8.1});
+      expect(server.lastRules.last, {'station_code': 'JHR-BULOH', 'kind': 'level', 'level_m': 8.2});
 
       await tapIt(tester, find.byKey(const ValueKey('height-alert')));
-      await tester.enterText(find.byKey(const ValueKey('height-field')), 'abc');
-      await tapIt(tester, find.byKey(const ValueKey('height-save')));
-      expect(find.textContaining('Enter a river level in metres'), findsOneWidget);
-      expect(app.controller.heights, {'JHR-BULOH': 8.1});
+      await tapIt(tester, find.byKey(const ValueKey('level-danger')));
+      expect(app.controller.heights, {'JHR-BULOH': 8.84});
       await waitForSnackBar(tester);
 
       await tapIt(tester, find.byKey(const ValueKey('height-alert')));
@@ -101,6 +102,35 @@ void main() {
       expect(await app.heightStore.load(), isEmpty);
       expect(find.text('Alert me at a river level'), findsOneWidget);
       await waitForSnackBar(tester);
+    });
+  });
+
+  group('TP74 Alerts on without setup', () {
+    testWidgets('first launch asks for notifications once and sends saved areas plus the nearest station', (tester) async {
+      final server = FakePushServer();
+      final tokens = FakePushTokens();
+      final app = TestApp(followed: const ['JHR-BULOH'], pushTokens: tokens, push: server.service(), pushAskedBefore: false);
+      await app.start(tester);
+      expect(tokens.asked, 1);
+      expect(app.controller.pushStatus, PushStatus.on);
+      expect(await app.flagsStore.load(), containsPair('pushAsked', 'true'));
+      expect(server.lastRules, [
+        {'station_code': 'JHR-BULOH', 'kind': 'risk', 'min_level': 'warning'},
+        {'station_code': 'JHR-AWAT', 'kind': 'risk', 'min_level': 'warning'}, // nearest to the user
+      ]);
+    });
+
+    testWidgets('location refused: the nearest station is not guessed from the sample point', (tester) async {
+      final server = FakePushServer();
+      final app = TestApp(
+          followed: const ['JHR-BULOH'],
+          pushTokens: FakePushTokens(state: PushPermission.granted),
+          push: server.service(),
+          location: LocationFix(SampleData.userLocation, issue: LocationIssue.denied));
+      await app.start(tester);
+      expect(server.lastRules, [
+        {'station_code': 'JHR-BULOH', 'kind': 'risk', 'min_level': 'warning'},
+      ]);
     });
   });
 }

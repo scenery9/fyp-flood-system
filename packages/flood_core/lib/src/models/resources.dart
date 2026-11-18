@@ -7,7 +7,7 @@ class ResourcePoint {
   final String name;
   final GeoPoint location;
 
-  /// One of [selangorDistricts]. Null only for rows made before districts existed.
+  /// One of [allDistricts] (Selangor or Melaka). Null only for rows made before districts existed.
   final String? district;
 }
 

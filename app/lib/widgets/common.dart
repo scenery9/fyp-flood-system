@@ -340,3 +340,30 @@ String formatAge(BuildContext context, Duration? d) {
 }
 
 String metres(double v) => '${v.toStringAsFixed(2)} m';
+
+/// Height of a JPS line ("8.20 m"), for "91% to Warning (8.20 m)".
+String? lineHeight(StationStatus s, RiskLevel? level) {
+  final t = s.station.thresholds;
+  if (t == null || level == null) return null;
+  return metres(switch (level) {
+    RiskLevel.normal => t.normal,
+    RiskLevel.alert => t.alert,
+    RiskLevel.warning => t.warning,
+    RiskLevel.danger => t.danger,
+  });
+}
+
+/// "91% to Warning (8.20 m)", or "Above the Danger line (19.95 m)" once
+/// the river is at Danger. Same words on the list and the station page.
+String? towardsText(BuildContext context, StationStatus s) {
+  final p = s.percentToTarget, l = s.targetLevel;
+  if (s.level == RiskLevel.danger) {
+    final h = lineHeight(s, RiskLevel.danger);
+    return context.tr('Above the Danger line${h == null ? '' : ' ($h)'}', 'Di atas garis Bahaya${h == null ? '' : ' ($h)'}',
+        '高于危险线${h == null ? '' : '（$h）'}');
+  }
+  if (p == null || l == null) return null;
+  final h = lineHeight(s, l);
+  final at = h == null ? '' : ' ($h)';
+  return context.tr('${p.round()}% to ${context.levelName(l)}$at', '${p.round()}% ke ${context.levelName(l)}$at', '距${context.levelName(l)} ${p.round()}%${h == null ? '' : '（$h）'}');
+}

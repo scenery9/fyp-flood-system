@@ -10,7 +10,7 @@ class AppSettings {
     this.textSize = TextSize.medium,
     this.highContrast = false,
     this.region,
-    this.notificationThreshold = RiskLevel.alert,
+    this.notificationThreshold = RiskLevel.warning,
   });
   final AppLanguage language;
   final TextSize textSize;
@@ -19,7 +19,8 @@ class AppSettings {
   /// State to show by default (null = all states).
   final String? region;
 
-  /// Lowest risk level that sends a notification.
+  /// Lowest risk level that sends a notification. Warning by default: early
+  /// enough to get ready, without an alert for every small rise.
   final RiskLevel notificationThreshold;
 
   AppSettings copyWith({

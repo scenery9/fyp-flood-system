@@ -59,3 +59,12 @@ export 'src/services/preparedness_service.dart';
 export 'src/data/live_station_repository.dart';
 export 'src/data/supabase_api.dart';
 export 'src/services/push_alert_service.dart';
+
+// Round 7: easier alerts, offline route guide, public reports and headcount
+export 'src/services/alert_guide.dart';
+export 'src/services/public_reports_service.dart';
+export 'src/services/route_guide.dart';
+export 'src/services/location_consent.dart';
+
+// Round 8: relief centres from places/centres.csv (Supabase), Melaka
+export 'src/data/live_centres.dart';

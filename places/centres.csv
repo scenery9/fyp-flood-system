@@ -1,0 +1,6 @@
+code,name,state,district,lat,lon,capacity,capacity_is_estimate,location_checked,resource_point_code,notes
+PPS-SGR-DEWAN-SERI-SEKINCHAN,Dewan Seri Sekinchan,Selangor,SABAK BERNAM,3.513848,101.096188,150,yes,yes,,From the FloodWatch app (Sekinchan; position picked on a map)
+PPS-SGR-SMK-P-KAPAR,SMK (P) Kapar,Selangor,KLANG,3.135347,101.380869,250,yes,yes,,From the FloodWatch app (Kapar; position picked on a map)
+PPS-SGR-SK-BUKIT-BADONG,Sekolah Kebangsaan Bukit Badong,Selangor,KUALA SELANGOR,3.333388,101.413324,200,yes,yes,,From the FloodWatch app (Kampung Masjid; position picked on a map)
+PPS-SGR-SMK-TINGGI-KAJANG,Sekolah Menengah Kebangsaan Tinggi Kajang,Selangor,HULU LANGAT,2.992831,101.796579,250,yes,yes,,From the FloodWatch app (Kajang; position picked on a map)
+PPS-MLK-AYER-KEROH,Ayer Keroh,Melaka,MELAKA TENGAH,2.265102,102.280205,200,yes,yes,,From the FloodWatch app (Ayer Keroh; position picked on a map)

@@ -134,15 +134,15 @@ from family or neighbour (no own car). Saved areas: Kg. Awat (Danger), Buloh Kas
 ### TP53 Prepare checklist
 | ID | Steps | Expected |
 |---|---|---|
-| 53.1 | Open Prepare (area at Danger) | "When river is at Danger", "0 of 5 done", household item listed |
+| 53.1 | Open Prepare (area at Danger) | "When river is at Danger", "0 of 2 done" (3 safety cards not counted), household item listed |
 | 53.2 | Tap Alert | Alert list, "0 of 7 done", driver item |
-| 53.3 | Tick an item; Clear ticks > Clear | "1 of 5 done" and saved; asks first; back to 0 |
+| 53.3 | Tick an item; Clear ticks > Clear | "1 of 2 done" and saved; asks first; back to 0 |
 | 53.4 | Home checklist card | Same progress; Open checklist goes to Prepare |
 
 ### TP54 Step by step
 | ID | Steps | Expected |
 |---|---|---|
-| 54.1 | Item 1 done > Go step by step > Mark as done | Opens on "Step 2 of 5"; moves to step 3; saved |
+| 54.1 | Item 1 done > Go step by step > Mark as done | Opens on "Step 2 of 2"; summary page; saved |
 | 54.2 | Skip, Back, Skip to the end > Back to checklist | Steps 1-2-1; summary "5 still to do"; back to list |
 | 54.3 | Tap the third item in the list | Opens on "Step 3 of 5" |
 
@@ -164,12 +164,12 @@ from family or neighbour (no own car). Saved areas: Kg. Awat (Danger), Buloh Kas
 |---|---|---|
 | 57.1 | Open Centres > Directions in Google Maps | Nearest open centre (SK Buloh Kasap) chosen; Google Maps link to it |
 | 57.2 | Tap Dewan Jementah in list; tap the Kg. Awat pin | Card shows "Opens only if…"; then "No space left…" |
-| 57.3 | Rain layer; River layer; tap a river pin | Gauges heaviest first (65.0 mm/h); "8.00 m → 8.52 m ↑"; station page |
+| 57.3 | Rain layer; Highest risk; 30 km; River layer; tap a river pin | Nearest first within 10 km (35.0 mm/h, not 65.0); heaviest first; "8.00 m → 8.52 m ↑" with a % bar; station page |
 
 ### TP57b Route inside the app
 | ID | Steps | Expected |
 |---|---|---|
-| 57b.1 | Centres > Show route > Open in Google Maps | "6.2 km · about 12 min by car", numbered steps with distances; Google Maps link |
+| 57b.1 | Centres > Show route > Open in Google Maps | "6.2 km · about 12 min by car", next step and all steps with distances; Google Maps link |
 | 57b.2 | Route service fails > Try again | "Could not get the road route…"; route shows after retry |
 | 57b.3 | No openrouteservice key > Prepare > Show route | "Road route inside the app is not set up yet." and Google Maps button |
 
@@ -213,6 +213,58 @@ from family or neighbour (no own car). Saved areas: Kg. Awat (Danger), Buloh Kas
 | 62.2 | Permission refused > Use my location (now allowed) | Notice with sample point; asks again; notice goes |
 | 62.3 | Location blocked for the app > Open settings | Phone's app settings open |
 
+### TP75 Alerts without setup
+| ID | Steps | Expected |
+|---|---|---|
+| 75.1 | Open the app (sample data) | "FloodReady" at the top; no alert banner |
+| 75.2 | More > Alerts near you now | Now: Kg. Awat and Segamat Kecil; expected: Buloh Kasap "Warning expected"; tap a row opens the station |
+| 75.3 | Notify me from Danger | Only Kg. Awat listed |
+
+### TP76 Route kept on the phone
+| ID | Steps | Expected |
+|---|---|---|
+| 76.1 | Open the app; route service then fails; Centres > Show route > Update route | Route saved after Home loaded; "No internet: showing the route saved…" with the same route |
+| 76.2 | Bahasa Melayu; Show route | Next step "Mula di Jalan Awat"; steps in Malay; Read aloud reads from the next step |
+| 76.3 | Centres list | "6.2 km · 12 min drive" once the route is known |
+| 76.4 | Open with space only | Full and closed centres hidden |
+
+### TP77 Report flooding
+| ID | Steps | Expected |
+|---|---|---|
+| 77.1 | Home > Report flooding > Knee > Send report | "Near Kg. Awat, Segamat"; saved; My reports shows "Flooding seen · Being checked" |
+| 77.2 | Damage | Send off until what and how bad are chosen; time "1 hour ago" kept |
+| 77.3 | Location off > Send report | Asks to pick the place on the map |
+
+### TP78 Headcount
+| ID | Steps | Expected |
+|---|---|---|
+| 78.1 | Centres > Tell this centre we're coming > Not now > Adults + > Oxygen or machine on > Send | 4 people, 1 aged 60+, 1 adult, daily medicine and machine; "1 of 4 counted" before; sent to SK Buloh Kasap; Arrived; Remove asks first |
+| 78.2 | 2 people: +60+, +baby; then People − | Every group + stops at the total; lowering the total gives "1 of 1 counted" |
+
+### TP79 Fewer things to type
+| ID | Steps | Expected |
+|---|---|---|
+| 79.1 | Household form: 2 people > Adults + > Babies + > Pets + > machine on > Save | "2 of 2 counted"; Children + off; saved 1 baby, 1 adult, 1 pet, machine |
+| 79.4 | Prepare at Danger | Three tinted safety cards with no tick box; Call 999 opens the phone app with 999 |
+| 79.5 | Prepare > Warning | Go-bag item shows "What to bring" including medicine for 7 days |
+| 79.2 | Emergency numbers > Choose from contacts | Number from the phone's contacts saved |
+| 79.3 | Add an area; Centres > River > star | Distances shown, nearest first; star saves the station |
+
+### TP88 Location when the app opens
+| ID | Steps | Expected |
+|---|---|---|
+| 88.1 | First launch, location not allowed > Allow location | "Use your location?" first; phone pop-up only after Allow; used from then on |
+| 88.2 | Not now; reopen; tick Don't ask me again > Not now; reopen | Asked again on the second launch; not on the third |
+| 88.3 | Agreed before, Android "Only this time" ended; reopen | Only the phone pop-up, no FloodReady screen |
+| 88.4 | Pull to refresh with location not allowed | No pop-up |
+| 88.5 | Blocked for good; Centres > Open settings | No question at launch; button opens the phone settings |
+| 88.6 | More > Use my location automatically off, then on | Off: "You chose not to use your location", GPS not used; on: phone asked |
+
+### TP89 Forecast as now and later
+| ID | Steps | Expected |
+|---|---|---|
+| 89.1 | Home forecast card | "Now 19.97 m → By (time) 20.04 m"; "Rising slowly (+7 cm)" with "2 cm above the Danger line" smaller on the next line; Read aloud says the same |
+
 ## Manual checks on a real phone
 
 | ID | Steps | Expected | Pass / fail |
@@ -221,7 +273,7 @@ from family or neighbour (no own car). Saved areas: Kg. Awat (Danger), Buloh Kas
 | M2 | Close the app fully and reopen; Prepare | Details hidden again until checked | |
 | M3 | Phone with no screen lock; lock turned on | Set-up message explains Settings > Security | |
 | M4 | TalkBack on: swipe through Home and the menu | Each tab read as "Home, selected", etc.; risk word and icon read; SOS read with its hint | |
-| M5 | Station detail > Copy status > paste into WhatsApp | Text pastes correctly | |
+| M5 | Station detail > Share status > WhatsApp | WhatsApp opens with the status text, then pick a chat | |
 | M6 | Centres > Directions | Google Maps opens with the route to the centre | |
 | M7 | SOS hold 2 s (use a test phone with no SIM, or cancel before connecting) | Dialer shows 999 | |
 | M8 | SOS > Text my location | SMS app opens with number and map link | |
@@ -234,6 +286,14 @@ from family or neighbour (no own car). Saved areas: Kg. Awat (Danger), Buloh Kas
 | M15 | Read aloud in English, Malay and 中文 | Each speaks in its language; if a voice is missing, the message shows | |
 | M16 | First launch: allow location; then deny in phone settings and reopen | Real distances; then the sample-point notice | |
 | M17 | Live build: More > Notify me from > Turn on phone notifications > Allow | Note says notifications are on; Supabase table device_tokens has one row | |
-| M18 | Station page > Alert me at a river level > enter a level just below the current reading > Save; close the app; wait up to 30 min | A phone notification arrives with the station, the level and your alert level | |
+| M18 | Station page > Alert me at a river level > pick the level the river is already above; close the app; wait up to 30 min | A phone notification arrives with the station, the level and your alert level | |
 | M19 | Turn notifications off for the app in phone settings, reopen More > Notify me from | Note says notifications are blocked and how to turn them on | |
 | M20 | Staff accounts: a Coordinator for KLANG signs in (SQL or staff screens later) | Sees only KLANG centres, depots, stock and damage reports | |
+| M21 | Live build, first launch | Asked once to allow notifications; More > Notify me from shows Warning | |
+| M22 | Show route online; airplane mode; reopen the route | Same route shows with "No internet: showing the route saved…" | |
+| M23 | Report flooding > Somewhere else > tap the map > Use this place > Send | Report appears in My reports; Supabase damage_reports has kind "sighting" | |
+| M24 | Emergency numbers > Choose from contacts | Phone's contact list opens; the number tapped is saved | |
+| M25 | Tell this centre we're coming > Send > Arrived; Supabase headcounts | One row with the needs and status "arrived" | |
+| M26 | Fresh install > Allow location > "Only this time"; close the app fully; reopen | Only Android's pop-up shows again (no FloodReady screen) | |
+| M27 | Fresh install > "Don't allow" twice on Android's pop-up; reopen | No pop-up; Centres button opens the app's permission page | |
+| M28 | Allow with "Approximate" (Android 12+) | App still works; nearest station from the rough position | |

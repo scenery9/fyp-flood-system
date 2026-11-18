@@ -34,6 +34,9 @@ class AppMap extends StatelessWidget {
     this.onPinTap,
     this.legend,
     this.height = 320,
+    this.onMapTap,
+    this.highlight,
+    this.controller,
   });
   final GeoPoint you;
   final List<MapPin> pins;
@@ -48,6 +51,15 @@ class AppMap extends StatelessWidget {
   final Widget? legend;
   final double height;
 
+  /// Tapping the map itself (not a pin), e.g. to drop a pin for a report.
+  final ValueChanged<GeoPoint>? onMapTap;
+
+  /// Part of [route] drawn stronger (the highlighted step on the route page).
+  final List<GeoPoint>? highlight;
+
+  /// Lets a screen move the map (e.g. to the highlighted step).
+  final MapController? controller;
+
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
@@ -59,6 +71,7 @@ class AppMap extends StatelessWidget {
         height: height,
         child: Stack(children: [
           FlutterMap(
+            mapController: controller,
             options: MapOptions(
               initialCenter: _ll(you),
               initialZoom: 13,
@@ -67,6 +80,7 @@ class AppMap extends StatelessWidget {
                   : null,
               backgroundColor: const Color(0xFFEEF2EA),
               interactionOptions: const InteractionOptions(flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
+              onTap: onMapTap == null ? null : (_, ll) => onMapTap!(GeoPoint(ll.latitude, ll.longitude)),
             ),
             children: [
               if (app.deps.showMapTiles)
@@ -80,9 +94,18 @@ class AppMap extends StatelessWidget {
                   Polyline(
                     points: [for (final p in route!) _ll(p)],
                     strokeWidth: straightLine ? 4 : 6,
-                    color: c.primary,
+                    // Lighter when one step is drawn over it.
+                    color: highlight != null && highlight!.length > 1 ? c.primary.withValues(alpha: 0.4) : c.primary,
                     pattern: straightLine ? StrokePattern.dotted() : const StrokePattern.solid(),
                   ),
+                  if (highlight != null && highlight!.length > 1)
+                    Polyline(
+                      points: [for (final p in highlight!) _ll(p)],
+                      strokeWidth: 9,
+                      color: c.primary,
+                      borderStrokeWidth: 2,
+                      borderColor: Colors.white,
+                    ),
                 ]),
               MarkerLayer(markers: [
                 Marker(

@@ -1,6 +1,8 @@
 // TP47-TP59: screens, navigation and every setting (sample data, no real phone).
 import 'package:flood_app/app/app_controller.dart';
 import 'package:flood_app/app/platform.dart';
+import 'package:flood_app/app/sample_data.dart';
+import 'package:flood_app/screens/home/home_screen.dart';
 import 'package:flood_app/widgets/app_map.dart';
 import 'package:flood_core/flood_core.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +13,9 @@ import 'package:material_ui/material_ui.dart';
 import 'helpers.dart';
 
 const awat = 'Sg. Muar di Kg. Awat';
+
+/// A reading on the saved-area card (the forecast card shows the same number too).
+Finder inAreaCard(String text) => find.descendant(of: find.byType(AreaCard), matching: find.text(text));
 const buloh = 'Sg. Muar di Buloh Kasap';
 
 void main() {
@@ -76,7 +81,7 @@ void main() {
     testWidgets('shows the first saved area with its level word and reading', (tester) async {
       await TestApp().start(tester);
       expect(find.text('Danger'), findsWidgets);
-      expect(find.text('19.97 m'), findsOneWidget);
+      expect(inAreaCard('19.97 m'), findsOneWidget);
       expect(find.text('Danger from 19.95 m'), findsOneWidget);
     });
 
@@ -85,7 +90,7 @@ void main() {
       await app.start(tester);
       await tapIt(tester, find.bySemanticsLabel('Next area'));
       expect(app.controller.areaIndex, 1);
-      expect(find.text('8.00 m'), findsOneWidget);
+      expect(inAreaCard('8.00 m'), findsOneWidget);
       await tapIt(tester, find.bySemanticsLabel('Previous area'));
       expect(app.controller.areaIndex, 0);
       await tapIt(tester, find.bySemanticsLabel(RegExp('3 of 3')));
@@ -96,13 +101,23 @@ void main() {
     testWidgets('swiping left shows the next area', (tester) async {
       final app = TestApp();
       await app.start(tester);
-      await tester.fling(find.text('19.97 m'), const Offset(-300, 0), 1000);
+      await tester.fling(inAreaCard('19.97 m'), const Offset(-300, 0), 1000);
       await tester.pumpAndSettle();
       expect(app.controller.areaIndex, 1);
     });
 
-    testWidgets('no saved areas: invites the user to add one', (tester) async {
-      await TestApp(followed: const []).start(tester);
+    testWidgets('no saved areas: shows the station nearest the user, with Save', (tester) async {
+      final app = TestApp(followed: const []);
+      await app.start(tester);
+      expect(find.text('Nearest to you · 1.2 km'), findsOneWidget); // the card (the alert banner also says it)
+      expect(find.text(awat), findsWidgets);
+      await tapIt(tester, find.byKey(const ValueKey('save-nearest')));
+      expect(await app.followedStore.load(), ['JHR-AWAT']);
+      expect(find.textContaining('Saved area'), findsOneWidget);
+    });
+
+    testWidgets('no saved areas and no location: invites the user to add one', (tester) async {
+      await TestApp(followed: const [], location: LocationFix(SampleData.userLocation, issue: LocationIssue.denied)).start(tester);
       expect(find.text('No saved areas yet'), findsOneWidget);
       await tapIt(tester, find.text('Add an area'));
       expect(find.text('Saved areas'), findsOneWidget);
@@ -116,7 +131,7 @@ void main() {
       await tapIt(tester, find.byKey(const ValueKey('change-area')));
       await tapIt(tester, find.text(buloh));
       expect(app.controller.areaIndex, 1);
-      expect(find.text('8.00 m'), findsOneWidget);
+      expect(inAreaCard('8.00 m'), findsOneWidget);
     });
 
     testWidgets('remove an area', (tester) async {
@@ -189,9 +204,15 @@ void main() {
       expect(await app.followedStore.load(), contains('JHR-BULOH'));
       await waitForSnackBar(tester);
 
-      await tapIt(tester, find.byKey(const ValueKey('copy-status')));
+      await tapIt(tester, find.byKey(const ValueKey('share-status')));
+      await tapIt(tester, find.byKey(const ValueKey('share-copy')));
       expect(copied, contains('Status: Alert (Waspada)'));
       await waitForSnackBar(tester);
+
+      await tapIt(tester, find.byKey(const ValueKey('share-status')));
+      await tapIt(tester, find.byKey(const ValueKey('share-whatsapp')));
+      expect(app.opener.opened.last.toString(), startsWith('https://wa.me/?text='));
+      expect(Uri.decodeComponent(app.opener.opened.last.toString()), contains('Sg. Muar di Buloh Kasap'));
     });
   });
 
@@ -199,8 +220,12 @@ void main() {
     testWidgets('opens on the area\'s level with the household\'s items', (tester) async {
       await TestApp().start(tester);
       await openTab(tester, 'Prepare');
+      // The safety cards come first at Danger, so scroll to the checklist.
+      await reveal(tester, find.text('When river is at Danger'));
       expect(find.text('When river is at Danger'), findsOneWidget);
-      expect(find.text('0 of 5 done'), findsOneWidget);
+      // Danger: 2 tasks to tick; the 3 safety tips are cards, not counted.
+      expect(find.text('0 of 2 done'), findsOneWidget);
+      await reveal(tester, find.text('Help the older or less mobile person out first'));
       expect(find.text('Help the older or less mobile person out first'), findsOneWidget);
     });
 
@@ -217,22 +242,22 @@ void main() {
       final app = TestApp();
       await app.start(tester);
       await openTab(tester, 'Prepare');
-      await tapIt(tester, find.byKey(const ValueKey('tick-danger.call')));
-      expect(find.text('1 of 5 done'), findsOneWidget);
-      expect((await app.progressStore.load())['done'], 'danger.call');
+      await tapIt(tester, find.byKey(const ValueKey('tick-danger.leave')));
+      expect(find.text('1 of 2 done'), findsOneWidget);
+      expect((await app.progressStore.load())['done'], 'danger.leave');
 
       await tapIt(tester, find.byKey(const ValueKey('reset-level')));
       expect(find.text('Clear all ticks?'), findsOneWidget);
       await tapIt(tester, find.text('Clear'));
-      expect(find.text('0 of 5 done'), findsOneWidget);
+      expect(find.text('0 of 2 done'), findsOneWidget);
     });
 
     testWidgets('Home checklist card shows the same progress', (tester) async {
       final app = TestApp();
-      await app.controller.household.setDone('danger.call', true);
+      await app.controller.household.setDone('danger.leave', true);
       await app.start(tester);
       await reveal(tester, find.text('Your checklist · Danger'));
-      expect(find.text('1 of 5 done · made for your household'), findsOneWidget);
+      expect(find.text('1 of 2 done · made for your household'), findsOneWidget);
       await tapIt(tester, find.text('Open checklist'));
       expect(app.controller.tab, AppTab.prepare);
     });
@@ -245,9 +270,9 @@ void main() {
       await app.start(tester);
       await openTab(tester, 'Prepare');
       await tapIt(tester, find.byKey(const ValueKey('start-steps')));
-      expect(find.text('Step 2 of 5'), findsOneWidget);
+      expect(find.text('Step 2 of 2'), findsOneWidget);
       await tapIt(tester, find.byKey(const ValueKey('step-done')));
-      expect(find.text('Step 3 of 5'), findsOneWidget);
+      expect(find.text('Checklist summary'), findsOneWidget);
       expect(app.controller.done, containsAll(['danger.leave', 'danger.help']));
     });
 
@@ -255,16 +280,16 @@ void main() {
       await TestApp().start(tester);
       await openTab(tester, 'Prepare');
       await tapIt(tester, find.byKey(const ValueKey('start-steps')));
-      expect(find.text('Step 1 of 5'), findsOneWidget);
+      expect(find.text('Step 1 of 2'), findsOneWidget);
       await tapIt(tester, find.byKey(const ValueKey('step-next')));
-      expect(find.text('Step 2 of 5'), findsOneWidget);
+      expect(find.text('Step 2 of 2'), findsOneWidget);
       await tapIt(tester, find.byKey(const ValueKey('step-back')));
-      expect(find.text('Step 1 of 5'), findsOneWidget);
-      for (var i = 0; i < 5; i++) {
+      expect(find.text('Step 1 of 2'), findsOneWidget);
+      for (var i = 0; i < 2; i++) {
         await tapIt(tester, find.byKey(const ValueKey('step-next')));
       }
       expect(find.text('Checklist summary'), findsOneWidget);
-      expect(find.text('5 still to do'), findsOneWidget);
+      expect(find.text('2 still to do'), findsOneWidget);
       await tapIt(tester, find.byKey(const ValueKey('steps-finish')));
       expect(find.text('When river is at Danger'), findsOneWidget);
     });
@@ -272,8 +297,8 @@ void main() {
     testWidgets('tapping an item in the list opens its own step page', (tester) async {
       await TestApp().start(tester);
       await openTab(tester, 'Prepare');
-      await tapIt(tester, find.text('If you cannot leave, call 999'));
-      expect(find.text('Step 3 of 5'), findsOneWidget);
+      await tapIt(tester, find.text('Help the older or less mobile person out first'));
+      expect(find.text('Step 2 of 2'), findsOneWidget);
     });
   });
 
@@ -297,6 +322,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Details hidden for privacy'), findsNothing);
       expect(find.text('Lift from family or neighbour'), findsOneWidget);
+      await reveal(tester, find.text('Because someone is 60 or older'));
       expect(find.text('Because someone is 60 or older'), findsOneWidget);
     });
 
@@ -327,7 +353,7 @@ void main() {
     testWidgets('choices change the checklist (pet adds pet items)', (tester) async {
       final app = TestApp(profile: null);
       await app.start(tester);
-      await tapIt(tester, find.text('Has a pet'));
+      await tapIt(tester, find.byKey(const ValueKey('pets-plus')));
       await tapIt(tester, find.text('No transport'));
       await tapIt(tester, find.byKey(const ValueKey('household-save')));
       final p = await app.controller.household.loadProfile();
@@ -360,14 +386,23 @@ void main() {
       expect(find.text('No space left. Choose another centre.'), findsOneWidget);
     });
 
-    testWidgets('Rain layer lists gauges heaviest first; River layer shows the forecast', (tester) async {
+    testWidgets('Rain layer: nearest first within 10 km; Highest risk and 30 km change the list; River shows the forecast', (tester) async {
       await TestApp().start(tester);
       await openTab(tester, 'Centres');
       await tapIt(tester, find.text('Rain'));
+      expect(find.text('Rain gauges · nearest first'), findsOneWidget);
+      // List row (the map pin shows the same 35.0 mm/h).
+      expect(find.textContaining('35.0 mm/h · '), findsOneWidget); // Buloh Kasap, about 5 km
+      expect(find.textContaining('65.0 mm/h'), findsNothing, reason: 'Durian Tunggal is about 60 km away');
+      await tapIt(tester, find.text('Highest risk'));
       expect(find.text('Rain gauges · heaviest first'), findsOneWidget);
-      expect(find.textContaining('65.0 mm/h'), findsOneWidget);
+      await tapIt(tester, find.byKey(const ValueKey('radius-30.0')));
+      expect(find.textContaining('65.0 mm/h'), findsNothing);
       await tapIt(tester, find.text('River'));
-      expect(find.text('8.00 m → 8.52 m ↑'), findsOneWidget);
+      // Level now with the AI arrow, kept together on one line.
+      expect(find.text('8.00\u00A0m\u00A0↑'), findsOneWidget);
+      expect(find.textContaining(RegExp(r'% to Warning \(\d+\.\d\d m\)')), findsWidgets);
+      expect(find.textContaining('Above the Danger line ('), findsWidgets); // Kg. Awat
       // At test screen size this pin sits outside the visible part of the map
       // (a user would pan to it), so call its tap action directly.
       tester.widget<GestureDetector>(find.byKey(const ValueKey('pin-JHR-AWAT'))).onTap!();

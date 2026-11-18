@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../app/app_controller.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/choices.dart';
 import '../../widgets/common.dart';
 
 /// "About your household": number of people, needs and transport.
@@ -44,13 +45,6 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
   Widget build(BuildContext context) {
     final p = _p!;
     final c = context.colors;
-    final needs = <(String, bool, HouseholdProfile Function(bool))>[
-      (context.tr('Is 60 or older', 'Berumur 60 tahun ke atas'), p.olderAdult, (v) => p.copyWith(olderAdult: v)),
-      (context.tr('Is a baby or young child', 'Bayi atau kanak-kanak kecil'), p.youngChild, (v) => p.copyWith(youngChild: v)),
-      (context.tr('Uses a wheelchair or walking aid', 'Menggunakan kerusi roda atau alat bantu jalan'), p.mobilityAid, (v) => p.copyWith(mobilityAid: v)),
-      (context.tr('Needs daily medicine or a machine (e.g. oxygen)', 'Perlukan ubat harian atau mesin (cth. oksigen)'), p.dailyMedicine, (v) => p.copyWith(dailyMedicine: v)),
-      (context.tr('Has a pet', 'Ada haiwan peliharaan'), p.pet, (v) => p.copyWith(pet: v)),
-    ];
     final ways = <(Transport, String)>[
       (Transport.ownCar, context.tr('Own car', 'Kereta sendiri')),
       (Transport.motorcycle, context.tr('Motorcycle', 'Motosikal')),
@@ -86,7 +80,7 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
                   key: const ValueKey('people-minus'),
                   icon: Icons.remove,
                   label: context.tr('Fewer people', 'Kurang orang'),
-                  onTap: p.people <= HouseholdProfile.minPeople ? null : () => setState(() => _p = p.copyWith(people: p.people - 1)),
+                  onTap: p.people <= HouseholdProfile.minPeople ? null : () => setState(() => _p = p.copyWith(people: p.people - 1).fitted()),
                 ),
                 Semantics(
                   liveRegion: true,
@@ -108,16 +102,58 @@ class _HouseholdSetupScreenState extends State<HouseholdSetupScreen> {
           child: AppCard(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Text(context.tr('Does anyone at home…', 'Adakah sesiapa di rumah…'), style: context.text.titleMedium),
-              Text(context.tr('Choose all that apply', 'Pilih semua yang berkenaan'), style: context.text.bodyMedium),
-              for (var i = 0; i < needs.length; i++)
-                _ChoiceRow(
-                  label: needs[i].$1,
-                  selected: needs[i].$2,
-                  radio: false,
-                  last: i == needs.length - 1,
-                  onTap: () => setState(() => _p = needs[i].$3(!needs[i].$2)),
-                ),
+              Text(context.tr('Who are they?', 'Siapa mereka?', '他们是谁？'), style: context.text.titleMedium),
+              Text(
+                  context.tr('${p.grouped} of ${p.people} counted', '${p.grouped} daripada ${p.people} dikira', '已计 ${p.grouped} / ${p.people} 人'),
+                  key: const ValueKey('groups-counted'),
+                  style: context.text.bodyMedium!.copyWith(fontFeatures: AppText.tabular)),
+              ...HouseholdGroups.steppers(context, p, (next) => setState(() => _p = next)),
+              Divider(height: 1, color: c.divider),
+              CountStepper(
+                keyPrefix: 'grp-mobility',
+                label: context.tr('Use a wheelchair or walking aid', 'Menggunakan kerusi roda atau alat bantu jalan', '使用轮椅或助行器'),
+                value: p.mobility,
+                min: 0,
+                max: p.people,
+                lessLabel: context.tr('Fewer', 'Kurang', '减少'),
+                moreLabel: context.tr('More', 'Lebih', '增加'),
+                onChanged: (n) => setState(() => _p = p.copyWith(mobility: n)),
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: kGap),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: kMargin),
+          child: AppCard(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text(context.tr('Pets and health', 'Haiwan peliharaan dan kesihatan', '宠物和健康'), style: context.text.titleMedium),
+              CountStepper(
+                keyPrefix: 'pets',
+                label: context.tr('Pets', 'Haiwan peliharaan', '宠物'),
+                value: p.pets,
+                min: 0,
+                max: HouseholdProfile.maxPets,
+                lessLabel: context.tr('Fewer', 'Kurang', '减少'),
+                moreLabel: context.tr('More', 'Lebih', '增加'),
+                onChanged: (n) => setState(() => _p = p.copyWith(pets: n)),
+              ),
+              Divider(height: 1, color: c.divider),
+              SwitchRow(
+                key: const ValueKey('hh-medicine'),
+                label: context.tr('Someone needs daily medicine', 'Ada yang perlukan ubat harian', '有人需要每日服药'),
+                value: p.dailyMedicine,
+                onChanged: (v) => setState(() => _p = p.copyWith(dailyMedicine: v)),
+              ),
+              Divider(height: 1, color: c.divider),
+              SwitchRow(
+                key: const ValueKey('hh-machine'),
+                label: context.tr('Someone uses oxygen or a machine that needs power', 'Ada yang menggunakan oksigen atau mesin yang perlukan elektrik',
+                        '有人使用需要供电的氧气机或医疗设备'),
+                value: p.powerMachine,
+                onChanged: (v) => setState(() => _p = p.copyWith(powerMachine: v)),
+              ),
             ]),
           ),
         ),
@@ -241,5 +277,33 @@ class _ChoiceRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// The four age groups as − / + rows. Together they never go above the
+/// total: + turns off once every person is counted. Shared by the household
+/// form and the relief-centre headcount.
+class HouseholdGroups {
+  static List<Widget> steppers(BuildContext context, HouseholdProfile p, ValueChanged<HouseholdProfile> onChanged,
+      {String keyPrefix = 'grp'}) {
+    final room = p.people - p.grouped;
+    final less = context.tr('Fewer', 'Kurang', '减少');
+    final more = context.tr('More', 'Lebih', '增加');
+    Widget row(String key, String label, int value, HouseholdProfile Function(int) set) => CountStepper(
+          keyPrefix: '$keyPrefix-$key',
+          label: label,
+          value: value,
+          min: 0,
+          max: value + room,
+          lessLabel: less,
+          moreLabel: more,
+          onChanged: (n) => onChanged(set(n)),
+        );
+    return [
+      row('babies', context.tr('Babies or toddlers (0-3)', 'Bayi atau kanak-kanak kecil (0-3)', '婴幼儿（0-3岁）'), p.babies, (n) => p.copyWith(babies: n)),
+      row('children', context.tr('Children (4-12)', 'Kanak-kanak (4-12)', '儿童（4-12岁）'), p.children, (n) => p.copyWith(children: n)),
+      row('adults', context.tr('Adults', 'Dewasa', '成人'), p.adults, (n) => p.copyWith(adults: n)),
+      row('elderly', context.tr('Aged 60 or older', 'Berumur 60 tahun ke atas', '60岁或以上'), p.elderly, (n) => p.copyWith(elderly: n)),
+    ];
   }
 }

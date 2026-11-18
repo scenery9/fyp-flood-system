@@ -1,0 +1,3 @@
+code,name,state,district,lat,lon,notes
+DEMO-SGR-KLANG-DEPOT,DEMO Klang Depot,Selangor,KLANG,3.045,101.445,DEMO ONLY - made-up depot copied from FloodWatch's demo data; not an operating relief depot
+DEMO-MLK-DEPOT,DEMO Melaka Depot,Melaka,MELAKA TENGAH,2.211,102.26,DEMO ONLY - made-up depot copied from FloodWatch's demo data; not an operating relief depot

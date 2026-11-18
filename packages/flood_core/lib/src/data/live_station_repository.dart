@@ -4,7 +4,7 @@ import '../util/geo.dart';
 import 'station_repository.dart';
 import 'supabase_api.dart';
 
-/// Real JPS Selangor stations and their latest readings, as logged every
+/// Real JPS Selangor and Melaka stations and their latest readings, as logged every
 /// 15 minutes by logger/ into Supabase (view public.jps_latest in
 /// supabase/alerts.sql). Station ids are the JPS station codes.
 ///
@@ -37,11 +37,8 @@ class LiveStationRepository implements StationRepository {
   }
 
   Future<void> _download() async {
-    final rows = await api.select('jps_latest', {
-      'select': 'station_code,name,district,lat,lon,wl_normal,wl_alert,wl_warning,wl_danger,'
-          'level_m,level_at,hourly_mm,rain_at',
-      'order': 'name',
-    });
+    // '*' so the app keeps working before and after supabase/places.sql adds "state".
+    final rows = await api.select('jps_latest', {'select': '*', 'order': 'name'});
     final stations = <Station>[];
     final readings = <String, StationReading>{};
     for (final r in rows) {
@@ -63,7 +60,7 @@ class LiveStationRepository implements StationRepository {
       id: code,
       name: '${r['name'] ?? code}',
       district: '${r['district'] ?? ''}',
-      state: 'Selangor',
+      state: _state(r['state']),
       location: (lat != null && lon != null && validCoordinates(lat, lon) && !(lat == 0 && lon == 0))
           ? GeoPoint(lat, lon)
           : null,
@@ -98,6 +95,12 @@ class LiveStationRepository implements StationRepository {
     if (n == null || a == null || w == null || d == null) return null;
     if (!(n < a && a < w && w < d)) return null;
     return Thresholds(normal: n, alert: a, warning: w, danger: d);
+  }
+
+  /// "Selangor" or "Melaka" (rows logged before Melaka was added have no state).
+  static String _state(Object? v) {
+    final s = '${v ?? ''}'.trim();
+    return s.isEmpty ? 'Selangor' : s;
   }
 
   static double? _num(Object? v) {

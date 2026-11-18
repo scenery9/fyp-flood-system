@@ -9,7 +9,7 @@
     <!-- Flood alerts as phone notifications (Android 13+ asks the user first). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
-        android:label="flood_app"
+        android:label="FloodReady"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- Push alerts use Firebase Installation IDs (Firebase's replacement for registration tokens). -->

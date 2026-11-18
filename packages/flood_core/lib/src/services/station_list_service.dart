@@ -30,9 +30,11 @@ class StationListService {
     String? state, // null = all states
     SortBy sortBy = SortBy.highestRisk,
     ListMode mode = ListMode.riverLevel,
+    double? withinKm, // null = any distance; else only stations this close
   }) {
     final q = query.trim().toLowerCase();
     final result = all.where((s) {
+      if (withinKm != null && (s.distanceKm == null || s.distanceKm! > withinKm)) return false;
       if (state != null && s.station.state.toLowerCase() != state.trim().toLowerCase()) {
         return false;
       }

@@ -2,9 +2,12 @@ import 'package:flood_core/flood_core.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../app/app_controller.dart';
+import '../../app/platform.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../home/alerts_screen.dart';
 import '../prepare/household_screen.dart';
+import '../report/report_screen.dart';
 import 'info_screens.dart';
 import 'saved_areas_screen.dart';
 
@@ -46,6 +49,30 @@ class MoreScreen extends StatelessWidget {
             last: true,
             onTap: () => app.selectTab(AppTab.centres),
           ),
+        ]),
+        SectionHeader(context.tr('Location', 'Lokasi', '位置')),
+        GroupCard(children: [
+          _SwitchRow(
+            key: const ValueKey('location-switch'),
+            title: context.tr('Use my location automatically', 'Guna lokasi saya secara automatik', '自动使用我的位置'),
+            subtitle: context.tr('Nearest station, relief centres and alerts near you', 'Stesen paling dekat, pusat pemindahan dan amaran berdekatan',
+                '最近的测站、疏散中心和附近警报'),
+            value: app.locationChoice.automatic == true,
+            onChanged: (v) => app.setLocationAutomatic(v),
+            last: !(app.locationChoice.automatic == true &&
+                (app.locationIssue == LocationIssue.deniedForever || app.locationIssue == LocationIssue.serviceOff)),
+          ),
+          // Wanted, but the phone is blocking it: a way to fix that.
+          if (app.locationChoice.automatic == true &&
+              (app.locationIssue == LocationIssue.deniedForever || app.locationIssue == LocationIssue.serviceOff))
+            LinkRow(
+              key: const ValueKey('location-settings'),
+              label: app.locationIssue == LocationIssue.serviceOff
+                  ? context.tr('Location is off on this phone: turn it on', 'Lokasi dimatikan pada telefon: hidupkan', '手机定位已关闭：开启')
+                  : context.tr('Blocked in phone settings: allow it', 'Disekat dalam tetapan telefon: benarkan', '已在手机设置中阻止：去允许'),
+              last: true,
+              onTap: app.deps.location.openSettings,
+            ),
         ]),
         SectionHeader(context.tr('Privacy', 'Privasi')),
         const GroupCard(children: [LockSwitchRow()]),
@@ -124,10 +151,29 @@ class MoreScreen extends StatelessWidget {
         SectionHeader(context.tr('Alerts', 'Amaran')),
         GroupCard(children: [
           LinkRow(
+            key: const ValueKey('more-alerts'),
+            label: context.tr('Alerts near you now', 'Amaran berdekatan anda sekarang', '您附近的当前警报'),
+            value: '${app.alerts.now.length}',
+            onTap: () => _push(context, const AlertsScreen()),
+          ),
+          LinkRow(
             label: context.tr('Notify me from', 'Beritahu saya mulai'),
             value: context.levelName(s.notificationThreshold),
             last: true,
             onTap: () => _push(context, const NotifyLevelScreen()),
+          ),
+        ]),
+        SectionHeader(context.tr('Reports', 'Laporan', '报告')),
+        GroupCard(children: [
+          LinkRow(
+            label: context.tr('Report flooding', 'Laporkan banjir', '报告水灾'),
+            onTap: () => _push(context, const ReportScreen()),
+          ),
+          LinkRow(
+            key: const ValueKey('more-my-reports'),
+            label: context.tr('My reports', 'Laporan saya', '我的报告'),
+            last: true,
+            onTap: () => _push(context, const ReportScreen(startOnMine: true)),
           ),
         ]),
         SectionHeader(context.tr('Help and information', 'Bantuan dan maklumat')),

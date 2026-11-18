@@ -35,19 +35,19 @@ void main() {
       expect(s.textSize, TextSize.medium);
       expect(s.highContrast, isFalse);
       expect(s.region, isNull);
-      expect(s.notificationThreshold, RiskLevel.alert);
+      expect(s.notificationThreshold, RiskLevel.warning); // alerts on at Warning by default
     });
     test('saved settings come back after restart', () async {
       final store = InMemorySettingsStore();
       await SettingsService(store).save(const AppSettings().copyWith(
           language: AppLanguage.ms, textSize: TextSize.large, highContrast: true,
-          region: 'Johor', notificationThreshold: RiskLevel.warning));
+          region: 'Johor', notificationThreshold: RiskLevel.danger));
       final s = await SettingsService(store).load();
       expect(s.language, AppLanguage.ms);
       expect(s.textSize, TextSize.large);
       expect(s.highContrast, isTrue);
       expect(s.region, 'Johor');
-      expect(s.notificationThreshold, RiskLevel.warning);
+      expect(s.notificationThreshold, RiskLevel.danger);
     });
     test('region can be cleared', () async {
       final svc = SettingsService(InMemorySettingsStore({'region': 'Johor'}));
@@ -63,7 +63,7 @@ void main() {
       expect(s.textSize, TextSize.medium);
       expect(s.highContrast, isFalse);
       expect(s.region, isNull);
-      expect(s.notificationThreshold, RiskLevel.alert);
+      expect(s.notificationThreshold, RiskLevel.warning);
     });
     test('threshold "Normal" is refused', () async {
       final svc = SettingsService(InMemorySettingsStore());

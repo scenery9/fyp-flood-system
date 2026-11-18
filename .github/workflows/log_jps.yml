@@ -1,4 +1,4 @@
-name: Log JPS Selangor readings
+name: Log JPS Selangor and Melakareadings
 
 # Every 15 minutes, at minutes 7, 22, 37 and 52 (quieter than :00 on GitHub).
 # GitHub may start a run late when it is busy, and turns scheduled runs off after

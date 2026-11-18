@@ -82,7 +82,7 @@ void main() {
       expect(s.reading!.time, DateTime.utc(2026, 11, 17, 2, 45)); // the river reading's time
       expect(http.calls, hasLength(1)); // getStations + getLatestReadings: one download
       expect(http.calls.single.headers.containsKey('Authorization'), isFalse); // public data, no sign-in
-      expect(http.calls.single.uri.queryParameters['select'], contains('level_m'));
+      expect(http.calls.single.uri.queryParameters['select'], '*'); // works before and after places.sql adds "state"
     });
     test('the download is reused for a minute, then refreshed', () async {
       final http = FakeHttp()..reply('/rest/v1/jps_latest', 200, jsonEncode([row('A')]));
@@ -139,6 +139,13 @@ void main() {
           heights: {for (var i = 0; i < 18; i++) 'H$i': 1.0});
       expect(many, hasLength(20));
       expect(many.first.minLevel, RiskLevel.alert); // Normal is never a notification level
+    });
+    test('the station nearest the user is watched too, once', () {
+      final rules = pushRulesFor(
+          followedStationIds: ['A', 'B'], threshold: RiskLevel.warning, nearestStationId: 'N');
+      expect([for (final r in rules) r.stationCode], ['A', 'B', 'N']);
+      final same = pushRulesFor(followedStationIds: ['A'], threshold: RiskLevel.warning, nearestStationId: 'A');
+      expect(same, hasLength(1), reason: 'a saved area that is also the nearest gets one rule');
     });
     test('register and sync call the database functions as the signed-in phone', () async {
       final http = FakeHttp()

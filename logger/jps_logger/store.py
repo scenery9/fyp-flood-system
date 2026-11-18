@@ -55,6 +55,22 @@ class Store:
                 return out
             offset += PAGE
 
+    def select(self, table, params):
+        """Rows of a small table, e.g. select("resource_points", [("select", "id,code")])."""
+        r = self.http.get(f"{self.url}/rest/v1/{table}", params=list(params), headers=self._headers(), timeout=60)
+        if r.status_code >= 300:
+            raise RuntimeError(f"Supabase read of {table} failed: HTTP {r.status_code} {r.text[:300]}")
+        return r.json()
+
+    def delete(self, table, filters):
+        """Deletes the rows matching filters, e.g. [("code", "eq.PPS-1")]."""
+        if not filters:
+            raise ValueError("refusing to delete without a filter")
+        r = self.http.delete(f"{self.url}/rest/v1/{table}", params=list(filters),
+                             headers=self._headers({"Prefer": "return=minimal"}), timeout=60)
+        if r.status_code >= 300:
+            raise RuntimeError(f"Supabase delete from {table} failed: HTTP {r.status_code} {r.text[:300]}")
+
     def first_time(self, table):
         """Earliest observed_at in a table, or None if it is empty."""
         r = self.http.get(f"{self.url}/rest/v1/{table}",

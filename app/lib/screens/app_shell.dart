@@ -4,6 +4,7 @@ import '../app/app_controller.dart';
 import '../widgets/pill_nav.dart';
 import 'centres/centres_screen.dart';
 import 'home/home_screen.dart';
+import 'location_question_screen.dart';
 import 'more/more_screen.dart';
 import 'prepare/household_setup_screen.dart';
 import 'prepare/prepare_screen.dart';
@@ -19,6 +20,7 @@ class AppShell extends StatelessWidget {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (app.needsSetup) return const HouseholdSetupScreen(firstLaunch: true);
+    if (app.askLocationNow) return const LocationQuestionScreen();
 
     final items = [
       PillNavItem(context.tr('Home', 'Utama'), Icons.home_outlined, Icons.home),

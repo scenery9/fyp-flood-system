@@ -65,12 +65,8 @@ RoutePlan parseOrsDirections(String body, {required GeoPoint from, required GeoP
     final summary = (props['summary'] as Map?) ?? const {};
     final steps = <RouteStep>[
       for (final seg in (props['segments'] as List?) ?? const [])
-        for (final s in ((seg as Map)['steps'] as List?) ?? const [])
-          RouteStep(
-              instruction: '${(s as Map)['instruction'] ?? ''}'.trim(),
-              distanceM: ((s['distance'] ?? 0) as num).toDouble(),
-              durationS: ((s['duration'] ?? 0) as num).toDouble()),
-    ].where((s) => s.instruction.isNotEmpty).toList();
+        for (final s in ((seg as Map)['steps'] as List?) ?? const []) _step(s as Map),
+    ].where((s) => s.instruction.isNotEmpty || s.type != null).toList();
     final coords = ((f['geometry'] as Map?)?['coordinates'] as List?) ?? const [];
     return RoutePlan(
         from: from,
@@ -87,6 +83,20 @@ RoutePlan parseOrsDirections(String body, {required GeoPoint from, required GeoP
   } catch (_) {
     throw RoutingException('Could not read the routing reply');
   }
+}
+
+RouteStep _step(Map s) {
+  final name = '${s['name'] ?? ''}'.trim();
+  final wp = s['way_points'];
+  return RouteStep(
+      instruction: '${s['instruction'] ?? ''}'.trim(),
+      distanceM: ((s['distance'] ?? 0) as num).toDouble(),
+      durationS: ((s['duration'] ?? 0) as num).toDouble(),
+      type: s['type'] is num ? (s['type'] as num).toInt() : null,
+      // openrouteservice writes "-" for a road without a name.
+      name: (name.isEmpty || name == '-') ? null : name,
+      exitNumber: s['exit_number'] is num ? (s['exit_number'] as num).toInt() : null,
+      wayPoint: wp is List && wp.isNotEmpty && wp.first is num ? (wp.first as num).toInt() : null);
 }
 
 /// Keeps the last route on the phone so it still shows without internet.

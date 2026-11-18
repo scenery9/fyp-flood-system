@@ -18,15 +18,19 @@ class ServerAlertRule {
 }
 
 /// The phone's push rules: every saved area at the "Notify me from" level,
-/// plus any river heights the user set. At most 20 rules (the server limit).
+/// the station nearest the user ([nearestStationId], so a new user is covered
+/// without any setup), plus any river heights the user set. At most 20 rules
+/// (the server limit); each station has one risk rule.
 List<ServerAlertRule> pushRulesFor({
   required List<String> followedStationIds,
   required RiskLevel threshold,
   Map<String, double> heights = const {},
+  String? nearestStationId,
 }) {
   final min = threshold == RiskLevel.normal ? RiskLevel.alert : threshold;
+  final riskIds = <String>{...followedStationIds, if (nearestStationId != null) nearestStationId};
   return [
-    for (final id in followedStationIds) ServerAlertRule.risk(id, min),
+    for (final id in riskIds) ServerAlertRule.risk(id, min),
     for (final e in heights.entries) ServerAlertRule.height(e.key, e.value),
   ].take(PushAlertService.maxRules).toList();
 }

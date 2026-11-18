@@ -1,4 +1,5 @@
 """Reading the public JPS Selangor API (the same feed as infobanjirjps.selangor.gov.my).
+Melaka is read from its web pages in melaka.py and stored the same way.
 
 Every response only holds each station's LATEST value, so anything not logged
 when it is shown is lost. Times are Malaysia time (UTC+8) and are stored in UTC.
@@ -103,6 +104,7 @@ def station_rows(wl_payloads, rf_payloads, wl_list, rf_list, now):
             "district": s.get("districtName"), "river_basin": None, "lat": None, "lon": None,
             "has_river_level": False, "has_rainfall": False, "wl_normal": None, "wl_alert": None,
             "wl_warning": None, "wl_danger": None, "updated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "state": "Selangor",
         })
         p = place.get(s.get("id"), {})
         for k in ("lat", "lon", "river_basin"):

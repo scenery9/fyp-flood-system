@@ -52,6 +52,9 @@ dependencies:
   # Push flood alerts (needs android/app/google-services.json; off without it).
   firebase_core: ^5.1.0
   firebase_messaging: ^17.0.1
+  # "Choose from contacts" for the emergency contact (the phone's own picker,
+  # no contacts permission needed).
+  flutter_native_contact_picker: ^0.0.11
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

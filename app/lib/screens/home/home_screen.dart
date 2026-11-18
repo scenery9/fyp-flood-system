@@ -5,11 +5,12 @@ import '../../app/app_controller.dart';
 import '../../app/forecast_text.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
-import '../../widgets/forecast_chart.dart';
 import '../../widgets/read_aloud_button.dart';
+import '../../widgets/river_gauge.dart';
 import '../../widgets/sos_button.dart';
 import '../more/saved_areas_screen.dart';
 import '../prepare/checklist_steps_screen.dart';
+import '../report/report_screen.dart';
 import 'forecast_why_screen.dart';
 import 'station_detail_screen.dart';
 
@@ -24,8 +25,10 @@ class HomeScreen extends StatelessWidget {
       onRefresh: app.refresh,
       child: ListView(
         primary: false,
-        padding: const EdgeInsets.only(top: 16, bottom: 24),
+        padding: const EdgeInsets.only(bottom: 24),
         children: [
+          const ScreenTitle('FloodReady'),
+          const SizedBox(height: kGap),
           if (app.loadError != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(kMargin, 0, kMargin, kGap),
@@ -45,6 +48,13 @@ class HomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: kGap),
                 const SosButton(),
+                const SizedBox(height: kGap),
+                OutlinedButton.icon(
+                  key: const ValueKey('report-flooding'),
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ReportScreen())),
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  label: Text(context.tr('Report flooding', 'Laporkan banjir', '报告水灾')),
+                ),
               ],
             ),
           ),
@@ -73,6 +83,15 @@ class AreaCarousel extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final areas = app.areas;
+    final nearest = app.nearest;
+    if (areas.isEmpty && nearest != null) {
+      // No saved areas yet: show the river station nearest the user, so a
+      // new user sees something useful without any setup.
+      return Padding(
+        padding: const EdgeInsets.only(bottom: kGap),
+        child: AreaCard(status: nearest, nearestMode: true),
+      );
+    }
     if (areas.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(bottom: kGap),
@@ -194,8 +213,11 @@ class _Arrow extends StatelessWidget {
 
 /// One area's status: the risk word, the river reading and when it was read.
 class AreaCard extends StatelessWidget {
-  const AreaCard({super.key, required this.status});
+  const AreaCard({super.key, required this.status, this.nearestMode = false});
   final StationStatus status;
+
+  /// Shown as "Nearest to you" with a Save button (no saved areas yet).
+  final bool nearestMode;
 
   @override
   Widget build(BuildContext context) {
@@ -243,8 +265,27 @@ class AreaCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(child: oneLine(context.tr('Saved area$distance', 'Kawasan disimpan$distance', '已保存地区$distance'), context.text.bodyMedium!)),
+                Expanded(
+                    child: oneLine(
+                        nearestMode
+                            ? context.tr('Nearest to you$distance', 'Paling dekat dengan anda$distance', '离您最近$distance')
+                            : context.tr('Saved area$distance', 'Kawasan disimpan$distance', '已保存地区$distance'),
+                        context.text.bodyMedium!)),
                 const SizedBox(width: 8),
+                if (nearestMode)
+                  FilledButton.tonal(
+                    key: const ValueKey('save-nearest'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                      shape: const StadiumBorder(),
+                      backgroundColor: c.background == Colors.white ? c.primaryTint : const Color(0xFFEAF1F8),
+                      foregroundColor: c.primary,
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                    ),
+                    onPressed: () => app.follow(s.station.id),
+                    child: Text(context.tr('Save area', 'Simpan kawasan', '保存地区')),
+                  )
+                else
                 FilledButton.tonal(
                   key: const ValueKey('change-area'),
                   style: FilledButton.styleFrom(
@@ -327,17 +368,7 @@ class ForecastCard extends StatelessWidget {
               style: context.text.bodyMedium!.copyWith(fontFeatures: AppText.tabular),
             ),
             const SizedBox(height: 12),
-            if (area.riverLevel != null)
-              ForecastChart(
-                current: area.riverLevel!,
-                forecast: f,
-                thresholds: area.station.thresholds,
-                levelNames: (l) => context.levelName(l),
-                nowLabel: context.tr('Now', 'Kini'),
-                semanticLabel: context.tr(
-                    'River level now ${metres(area.riverLevel!)}. Forecast in ${f.horizonHours} hours ${metres(f.predictedLevelM)}, likely between ${metres(f.lowM)} and ${metres(f.highM)}.',
-                    'Paras sungai kini ${metres(area.riverLevel!)}. Ramalan dalam ${f.horizonHours} jam ${metres(f.predictedLevelM)}, mungkin antara ${metres(f.lowM)} dan ${metres(f.highM)}.', '目前河流水位 ${metres(area.riverLevel!)}。预测 ${f.horizonHours} 小时后为 ${metres(f.predictedLevelM)}，可能介于 ${metres(f.lowM)} 至 ${metres(f.highM)}。'),
-              ),
+            if (area.riverLevel != null) ForecastGauge(status: area, forecast: f),
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.centerLeft,

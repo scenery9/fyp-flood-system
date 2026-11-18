@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flood_core/flood_core.dart';
 import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
+import 'package:flutter_native_contact_picker/flutter_native_contact_picker.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -33,6 +34,36 @@ Uri phoneUri(String number) => Uri(scheme: 'tel', path: number);
 /// Text message with a body. Built by hand because some SMS apps show "+"
 /// for spaces when the body is form-encoded.
 Uri smsUri(String number, String body) => Uri.parse('sms:$number?body=${Uri.encodeComponent(body)}');
+
+/// Text message with no number yet: the phone's SMS app asks who to send it to.
+Uri smsShareUri(String body) => Uri.parse('sms:?body=${Uri.encodeComponent(body)}');
+
+/// Opens WhatsApp with [body] ready to send; the user picks the chat.
+Uri whatsAppUri(String body) => Uri.parse('https://wa.me/?text=${Uri.encodeComponent(body)}');
+
+/// Picks a phone number from the phone's contacts. Tests use a fake.
+abstract class ContactPicker {
+  /// Null when the user cancelled or no number could be read.
+  Future<String?> pickPhone();
+}
+
+/// The phone's own contact list screen. Needs no contacts permission: the
+/// phone only hands over the one number the user taps.
+class DeviceContactPicker implements ContactPicker {
+  final FlutterNativeContactPicker _picker = FlutterNativeContactPicker();
+
+  @override
+  Future<String?> pickPhone() async {
+    try {
+      final c = await _picker.selectPhoneNumber();
+      final n = c?.selectedPhoneNumber ?? ((c?.phoneNumbers?.isNotEmpty ?? false) ? c!.phoneNumbers!.first : null);
+      final v = n?.trim();
+      return (v == null || v.isEmpty) ? null : v;
+    } catch (_) {
+      return null;
+    }
+  }
+}
 
 /// Saves followed area ids on the phone. Before the first save it returns
 /// [defaults], so a new user sees some areas on Home straight away.
@@ -100,7 +131,8 @@ class DeviceSpeaker implements Speaker {
 // ---------------------------------------------------------------- location
 
 /// Why the sample location is used instead of the phone's.
-enum LocationIssue { serviceOff, denied, deniedForever, failed }
+/// [off]: the user chose not to use location (More switch).
+enum LocationIssue { serviceOff, denied, deniedForever, failed, off }
 
 class LocationFix {
   const LocationFix(this.point, {this.issue});
@@ -112,6 +144,13 @@ class LocationFix {
 }
 
 abstract class LocationProvider {
+  /// Used when the phone's position is not (or may not be) used.
+  GeoPoint get fallback;
+
+  /// True when the phone already allows location for this app. Never shows
+  /// a pop-up.
+  Future<bool> allowed();
+
   /// The phone's position, or the sample point with the reason.
   /// Shows the permission pop-up only when [ask] is true (the Centres
   /// button); otherwise it just checks what was already allowed.
@@ -131,6 +170,7 @@ class DeviceLocationProvider implements LocationProvider {
   })  : _check = checkPermission ?? Geolocator.checkPermission,
         _request = requestPermission ?? Geolocator.requestPermission,
         _serviceOn = serviceEnabled ?? Geolocator.isLocationServiceEnabled;
+  @override
   final GeoPoint fallback;
   final Future<LocationPermission> Function() _check;
   final Future<LocationPermission> Function() _request;
@@ -139,6 +179,16 @@ class DeviceLocationProvider implements LocationProvider {
   /// Android blocked the pop-up. Its plain check still says "denied" in
   /// that case, so remember it until location is allowed in settings.
   bool _blocked = false;
+
+  @override
+  Future<bool> allowed() async {
+    try {
+      final p = await _check();
+      return p == LocationPermission.whileInUse || p == LocationPermission.always;
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   Future<LocationFix> current({bool ask = false}) async {

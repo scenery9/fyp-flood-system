@@ -415,7 +415,7 @@ Academic projects can apply for a larger free plan at https://openrouteservice.o
 2. **Anonymous sign-ins.** Supabase -> Authentication -> Sign In / Providers -> turn on
    "Allow anonymous sign-ins".
 3. **Firebase (free plan).** At https://console.firebase.google.com create a project, add
-   an Android app with package name `com.example.flood_app`, and download
+   an Android app with package name `com.scenery9.floodready`, and download
    `google-services.json` into `app/android/app/` (it is in `.gitignore`; the repository
    is public). Then Project settings -> Service accounts -> Generate new private key. That
    JSON file is a secret: never commit it or paste it in chat.
@@ -481,3 +481,158 @@ Academic projects can apply for a larger free plan at https://openrouteservice.o
 
 Edge Function tests: `cd supabase/functions` then `node --test tests/*.test.ts` (Node.js 22.18
 or newer). Database tests now run three files: `cd supabase/test`, `npm install`, `npm test`.
+
+## Round 7: easier alerts, offline route guide, flood reports, headcount
+
+Improvements from comparing the app with the reference app's walkthrough. The aim: no typing
+where a button can do, and no setup before alerts work.
+
+- **Alerts with no setup.** Saved areas, the river station nearest the user and stations within
+  10 km are checked at the "Notify me from" level, which is now **Warning** by default. The
+  app asks for notification permission once at first launch. Home shows the app name at the
+  top (no banner); *More > Alerts near you now* lists one row per station (not a
+  log of readings), plus what the AI expects to reach Warning or Danger within 3 hours.
+  Push rules now include the nearest station (only from the phone's real location).
+- **River-level alert without typing.** The station page offers the station's own JPS
+  Alert / Warning / Danger heights as buttons (Warning suggested). Rain gauges get no
+  river-level alert. Heights typed in an older version still show and can be removed.
+- **Route guide.** Every road route is kept on the phone (last 3 centres). Home saves the
+  route to the nearest open centre in the background, so it works without internet. The page
+  says when it was saved, warns after 1 hour, and has *Update route from where I am*. Steps
+  are worded by the app from the step type, so they read in English, Malay and Chinese. A
+  large *Next step* card has Read aloud. River stations at Warning/Danger within 1 km of the
+  route are shown as a warning, and centres over 10 km away get a reminder that closer ones
+  may open.
+- **Station lists by distance.** Rain and River layers on Centres: *Near me / Highest risk*,
+  5 / 10 / 30 km buttons, distance and age on each row, a % bar towards the next level, the
+  AI trend, and a star to save a station without opening it. With no saved areas, Home shows
+  the station nearest the user with a Save button.
+- **Report flooding** (Home button, More > Reports): *Flooding here now* or *Damage*; place
+  from the phone or a pin on the map (shown as "Near Kg. Awat, Segamat", never coordinates);
+  time as Now / 1 hour ago / 3 hours ago / Yesterday / Pick a date (last 60 days); water depth
+  as Ankle / Knee / Waist / Chest / Not sure; damage type and how bad as buttons. *My reports*
+  shows the officer's decision. A retry after a network failure is never counted twice.
+- **"Tell this centre we're coming"** (Centres and route page): people coming, then the same
+  − / + groups as the household form (babies or toddlers, children, adults, aged 60+; together
+  never more than the people coming), wheelchair or walking aid, pets, and on/off switches
+  for daily medicine and oxygen or a machine that needs power. Filled in from the household
+  details (behind the household lock); other needs as buttons (wheelchair access, formula,
+  diapers, cold medicine, other). Then *On the way / Arrived / Left the centre*; a headcount stops
+  counting after 72 hours or when "Left" is tapped. If the chosen centre is not on the
+  server (sample centres), the server picks the nearest open centre with space.
+- **Location like a typical app.** When the app opens and location is not allowed yet,
+  FloodReady first explains why (nearest station, alerts near you, closest centre), then the
+  phone's own pop-up appears only after *Allow location*. *Not now* asks again next time
+  unless *Don't ask me again* is ticked. Once allowed (even "Only this time"), the app uses
+  location every time it opens; if Android's permission has since ended, only the phone's
+  pop-up shows, never FloodReady's screen again. A refused-for-good permission is
+  remembered, so the button opens the phone settings instead. *More > Use my location
+  automatically* turns it on or off; off means GPS is not used and nothing is asked. Pull
+  to refresh, the 15-minute reload and coming back to the app never show a pop-up.
+- **Household form.** The people total stays as it was; under it, − / + for babies or
+  toddlers, children, adults and aged 60+ ("2 of 4 counted"; + turns off when everyone is
+  counted, and lowering the total takes people off the groups). Separate − / + for wheelchair
+  or walking aid and for pets; switches for daily medicine and oxygen or a machine.
+- **Prepare.** Safety tips (call 999 if you cannot leave, do not walk or drive through flood
+  water, go to the highest floor if trapped) are tinted cards with an icon, not tick boxes,
+  and are not counted. The 999 card has a one-tap *Call 999* button that opens the phone app.
+  The Warning go-bag item lists *What to bring*, with extra lines for the household (medicine,
+  spare battery for oxygen, baby items, glasses, walking aid, pet food).
+- **Same numbers everywhere.** The River list badge shows the level now (like Home, the
+  station page and saved areas). Rain is shown with one decimal on the map and in lists, and
+  distances with one decimal.
+- **Short station lists.** River and Rain rows show only the name (full width), the status
+  and reading ("19.97 m ↑", the arrow from the AI forecast kept on the same line), distance
+  and age, and for rivers "91% to Warning (8.20 m)" with a bar. The forecast and other details
+  are on the station page (tap the row). On Home the forecast card shows "2 cm above the
+  Danger line" smaller on its own line.
+- **Smaller changes.** Add an area:
+  nearest stations first and district buttons (search is last). Share opens WhatsApp or
+  SMS directly. Emergency contact can be chosen from the phone's contacts. Centres show
+  the drive time once known, an *Open with space only* filter, and a Call button when a
+  centre has a phone number. Data reloads every 15 minutes while the app is open and when
+  it comes back to the front.
+
+### Setup (once)
+
+1. **Database.** Supabase > SQL Editor: run `supabase/public_reports.sql` after the files in
+   Round 6, then `supabase/household_groups.sql` (age groups, pets and health needs in the
+   headcount). Without Supabase the app keeps reports and the headcount on the phone and says
+   staff will not see them.
+2. **App.** `flutter pub get` (new package: `flutter_native_contact_picker`, which uses the
+   phone's own contact screen and needs no contacts permission).
+
+### Limits to know
+
+- The relief centres in the app are still sample data, so a headcount sent from the live
+  build goes to the nearest centre the server knows. `reported_people()` gives per-centre
+  totals for the staff screens (to be built).
+- Expected alerts come from the AI forecast and are shown in the app only; push messages are
+  still sent for official JPS levels.
+- Hazards near the route use river stations within 1 km; they do not mean the road is closed
+  or open.
+
+### Round 7 test plans
+
+| Plan | File | What it checks |
+|---|---|---|
+| TP80-86 | flood_core round7_test | step types, saved routes, hazards near a route, current step, level buttons, active alerts, nearest station, lists by distance, household counts, report and headcount rules, phone-only and Supabase versions |
+| TP72-74 | app push_test | default Warning level, nearest station in push rules, first-launch question, level buttons instead of a height box |
+| TP75-79 | app round7_ui_test | app name on Home and Alerts page from More, saved route without internet, steps in Malay, drive time, open-only filter, reports, headcount groups within the total, household − / +, safety cards and Call 999, go-bag list, contact picker, near-me list and star |
+| TP87 | flood_core location_consent_test | explain first, phone pop-up only after agreeing, "Only this time", Don't ask again, blocked, More switch |
+| TP88 | app location_test | the same rules on screen: question, Allow, Not now, next launches, no pop-up on refresh, More switch, blocked |
+| RP1-RP2 | supabase/test/reports_test | sightings, retries, time limits, district, review cannot change a report; headcount centre choice, needs, age groups within the total, pets, status, 72-hour expiry, who sees what |
+
+Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
+`npm test` in `supabase/test` (now four files).
+
+
+## Round 8: relief centres from a file, Melaka
+
+- **Relief centres are real now.** The live build reads them from Supabase instead of the
+  sample list. They are kept in `places/centres.csv` and `places/resource_points.csv`, one
+  row per place (see `places/README.md`). Pushing a change to `places/` runs
+  *Upload relief centres and resource points* (`.github/workflows/places.yml`), which checks
+  every row and then makes Supabase match the files. The last list is kept on the phone, so
+  Centres and the route guide work without internet.
+- **Starting data.** The 5 centres the FloodWatch app showed (4 in Selangor, 1 in Melaka),
+  with FloodWatch's hand-picked positions (marked checked) and estimated capacities (the app
+  says "estimate"). Resource points: FloodWatch's 2 made-up depots, named DEMO.
+- **Unchecked positions.** A centre with `location_checked = no` is listed, but has no map
+  pin and no in-app route, is never suggested as the nearest centre or picked automatically for a headcount,
+  and Google Maps searches for it by name.
+- **Melaka.** The logger also reads the JPS Melaka pages (river level and rainfall, with the
+  map positions from the page) every 15 minutes. JPS Melaka updates about once an hour.
+  If its website blocks GitHub's servers or changes its layout, the run shows a warning and
+  Selangor is still logged. Melaka's three districts (ALOR GAJAH, JASIN, MELAKA TENGAH) are
+  added for staff areas and reports; the station page says "JPS Melaka data".
+
+### Setup (once, in this order)
+
+1. **Database first.** Supabase > SQL Editor: run `supabase/places.sql` (after all earlier
+   files). The logger sends the new `state` column, so it fails until this has run.
+2. **Push** to `main`. The upload workflow runs and loads the places (it uses the logger's
+   secrets). Check it in the Actions tab; *Run workflow* there runs it again.
+3. **App.** Nothing new to install.
+
+- **Route guide: one step at a time.** The route page shows the steps in one list. One
+  step is highlighted (large print, in colour, its stretch of road drawn stronger on the map);
+  the others are greyed out. *Next* moves the highlight down, *Back* moves it up, and tapping a
+  greyed-out step jumps to it. The map moves to that step, and with Read aloud on the step is
+  read out. The highlight starts at the step for where the phone is and follows the phone
+  until a step is chosen by hand; *Update route from where I am* lets it follow again.
+
+### Round 8 test plans
+
+| Plan | File | What it checks |
+|---|---|---|
+| LG5 | logger test_melaka | Melaka pages: names, districts, positions, thresholds, rain since midnight and last hour; stale and empty readings skipped; blocked site or new layout only a warning |
+| PL7-PL9 | logger test_places | the files in `places/` are valid; every mistake listed with its line; positions outside the state; upload adds, updates, links depots, removes, and reports a centre still in use |
+| PL1-PL6 | supabase/test/places_test | codes, districts, staff cannot change file rows but can record occupancy, loader deletes, headcount skips unchecked centres, Melaka stations and districts |
+| TP89-TP90 | flood_core round8_test | centres from Supabase, old rows, broken rows, kept on the phone without internet, read-only, Melaka districts and station state |
+| TP91 | app round8_ui_test | unchecked centre listed without route or suggestion, Google Maps by name, estimated capacity |
+| TP92 | flood_core round8_test | each step's stretch of road; highlight follows the phone until chosen by hand; Next / Back stop at the ends |
+| TP93 | app round8_ui_test | Next / Back / tap a step move the highlight, read aloud only when Read aloud is on, each step shown once |
+
+Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
+`npm test` in `supabase/test` (now five files), `python -m pytest` in `logger`.

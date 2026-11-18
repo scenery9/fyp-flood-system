@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../app/app_controller.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import 'prepare_screen.dart' show BringList;
 
 /// Step-by-step checklist: one item per page ("Step 3 of 7"), then a finish page.
 class ChecklistStepsScreen extends StatefulWidget {
@@ -139,6 +140,10 @@ class _StepPage extends StatelessWidget {
             Semantics(header: true, child: Text(item.title, style: context.text.headlineSmall)),
             const SizedBox(height: 12),
             Text(item.howTo, style: context.text.bodyLarge),
+            if (item.bring.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              BringList(item: item),
+            ],
             if (showReason && item.reason != null) ...[
               const SizedBox(height: 12),
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

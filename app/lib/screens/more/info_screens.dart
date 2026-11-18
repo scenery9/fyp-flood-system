@@ -18,8 +18,9 @@ class NotifyLevelScreen extends StatelessWidget {
     return SubPage(
       title: context.tr('Notify me from', 'Beritahu saya mulai'),
       children: [
-        NoteText(context.tr('Choose the lowest level that should alert you for your saved areas.',
-            'Pilih tahap paling rendah untuk memberi amaran bagi kawasan anda.')),
+        NoteText(context.tr('Choose the lowest level that should alert you. It covers your saved areas and the station nearest you; nothing else to set up.',
+            'Pilih tahap paling rendah untuk memberi amaran. Ia meliputi kawasan disimpan dan stesen paling dekat dengan anda; tiada tetapan lain.',
+            '选择提醒您的最低等级。适用于已保存地区和离您最近的测站，无需其他设置。')),
         const SizedBox(height: 12),
         GroupCard(children: [
           for (var i = 0; i < options.length; i++)
@@ -41,7 +42,7 @@ class NotifyLevelScreen extends StatelessWidget {
                       child: Text(
                         switch (options[i]) {
                           RiskLevel.alert => context.tr('Alert and above (earliest)', 'Waspada dan ke atas (paling awal)'),
-                          RiskLevel.warning => context.tr('Warning and Danger only', 'Amaran dan Bahaya sahaja'),
+                          RiskLevel.warning => context.tr('Warning and Danger (suggested)', 'Amaran dan Bahaya (dicadangkan)', '警告和危险（建议）'),
                           _ => context.tr('Danger only', 'Bahaya sahaja'),
                         },
                         style: context.text.bodyLarge,
@@ -78,9 +79,9 @@ class _PushStatusNote extends StatelessWidget {
   @override
   Widget build(BuildContext context) => NoteText(switch (status) {
         PushStatus.on => context.tr(
-            'Phone notifications are on for your saved areas and river-level alerts, even when the app is closed. Notifications can be late, so also follow JPS and NADMA.',
-            'Pemberitahuan telefon dihidupkan untuk kawasan simpanan dan amaran paras sungai anda, walaupun aplikasi ditutup. Pemberitahuan boleh lewat, jadi ikut juga JPS dan NADMA.',
-            '已为您保存的地区和河流水位警报开启手机通知，即使应用已关闭也会收到。通知可能会延迟，请同时留意JPS和NADMA的消息。'),
+            'Phone notifications are on for your saved areas, the station nearest you and your river-level alerts, even when the app is closed. Notifications can be late, so also follow JPS and NADMA.',
+            'Pemberitahuan telefon dihidupkan untuk kawasan simpanan, stesen paling dekat dan amaran paras sungai anda, walaupun aplikasi ditutup. Pemberitahuan boleh lewat, jadi ikut juga JPS dan NADMA.',
+            '已为您保存的地区、离您最近的测站和河流水位警报开启手机通知，即使应用已关闭也会收到。通知可能会延迟，请同时留意JPS和NADMA的消息。'),
         PushStatus.needsPermission => context.tr(
             'Your choice is saved. Allow notifications so alerts reach you when the app is closed.',
             'Pilihan anda disimpan. Benarkan pemberitahuan supaya amaran sampai walaupun aplikasi ditutup.',
@@ -267,6 +268,23 @@ class _EmergencyNumbersScreenState extends State<EmergencyNumbersScreen> {
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                 ),
               ),
+              if (app.deps.contacts != null) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  key: const ValueKey('contact-pick'),
+                  onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    final saved = context.tr('Contact saved', 'Kenalan disimpan');
+                    final n = await app.deps.contacts!.pickPhone();
+                    if (n == null || !mounted) return;
+                    _contact.text = n;
+                    await app.setEmergencyContact(n);
+                    messenger.showSnackBar(SnackBar(content: Text(saved)));
+                  },
+                  icon: const Icon(Icons.contacts_outlined),
+                  label: Text(context.tr('Choose from contacts', 'Pilih daripada kenalan', '从通讯录选择')),
+                ),
+              ],
               const SizedBox(height: 12),
               FilledButton(
                 key: const ValueKey('contact-save'),

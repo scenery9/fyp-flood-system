@@ -28,6 +28,7 @@ class _PrepareScreenState extends State<PrepareScreen> {
     final now = app.checklistLevel;
     final level = _picked ?? now;
     final items = app.checklist(level);
+    final advice = app.advice(level);
     final doneCount = items.where((i) => app.done.contains(i.id)).length;
     final area = app.currentArea;
     final areaName = area == null ? '' : (area.station.name.contains(' di ') ? area.station.name.split(' di ').last : area.station.name);
@@ -63,7 +64,15 @@ class _PrepareScreenState extends State<PrepareScreen> {
             ]),
           ),
         ),
-        const SizedBox(height: kGap),
+        if (advice.isNotEmpty) ...[
+          SectionHeader(context.tr('Stay safe', 'Kekal selamat', '注意安全')),
+          for (final a in advice)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(kMargin, 0, kMargin, kGap),
+              child: AdviceCard(item: a),
+            ),
+        ] else
+          const SizedBox(height: kGap),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: kMargin),
           child: AppCard(
@@ -194,6 +203,10 @@ class ChecklistRow extends StatelessWidget {
                           )),
                       if (showReason && item.reason != null)
                         Text(item.reason!, style: context.text.bodyMedium!.copyWith(color: c.primary)),
+                      if (item.bring.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        BringList(item: item),
+                      ],
                     ]),
                   ),
                   const Chevron(),
@@ -202,6 +215,83 @@ class ChecklistRow extends StatelessWidget {
             ),
           ),
         ),
+      ]),
+    );
+  }
+}
+
+/// Advice to remember, not a task: a tinted card with an icon and no tick
+/// box, so it does not read as a checklist item. The 999 card has a one-tap
+/// call button (opens the phone app with 999 ready to dial).
+class AdviceCard extends StatelessWidget {
+  const AdviceCard({super.key, required this.item});
+  final PrepItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = RiskStyle.of(RiskLevel.danger);
+    final icon = item.call != null
+        ? Icons.call
+        : item.id == 'danger.water'
+            ? Icons.do_not_disturb_on
+            : Icons.stairs;
+    return Semantics(
+      container: true,
+      child: Container(
+        key: ValueKey('advice-${item.id}'),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: s.tint, borderRadius: BorderRadius.circular(16)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ExcludeSemantics(child: Icon(icon, color: s.onTint, size: 28)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(item.title, style: context.text.titleMedium!.copyWith(color: s.onTint)),
+                const SizedBox(height: 2),
+                Text(item.howTo, style: context.text.bodyMedium!.copyWith(color: s.onTint)),
+              ]),
+            ),
+          ]),
+          if (item.call != null) ...[
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              key: ValueKey('advice-call-${item.call}'),
+              style: FilledButton.styleFrom(backgroundColor: s.color, foregroundColor: Colors.white, minimumSize: const Size.fromHeight(48)),
+              onPressed: () => callEmergency(context),
+              icon: const Icon(Icons.call),
+              label: Text(context.tr('Call ${item.call}', 'Hubungi ${item.call}', '拨打 ${item.call}')),
+            ),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// "What to bring" for the go-bag, fitted to the household.
+class BringList extends StatelessWidget {
+  const BringList({super.key, required this.item});
+  final PrepItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      key: ValueKey('bring-${item.id}'),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(color: const Color(0xFFEAF1F8), borderRadius: BorderRadius.circular(12)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(context.tr('What to bring', 'Apa yang perlu dibawa', '需要携带的物品'), style: context.text.titleSmall!.copyWith(color: c.primary)),
+        const SizedBox(height: 4),
+        for (final b in item.bring)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              ExcludeSemantics(child: Text('•  ', style: context.text.bodyMedium)),
+              Expanded(child: Text(b, style: context.text.bodyMedium)),
+            ]),
+          ),
       ]),
     );
   }
@@ -251,12 +341,15 @@ class HouseholdSummaryCard extends StatelessWidget {
         ]),
       );
     }
+    // Same groups and words as the household form and the centre headcount.
     final needs = [
-      if (p.olderAdult) context.tr('Someone 60+', 'Warga emas 60+'),
-      if (p.youngChild) context.tr('young child', 'kanak-kanak kecil'),
-      if (p.mobilityAid) context.tr('wheelchair or walking aid', 'kerusi roda atau alat bantu jalan'),
-      if (p.dailyMedicine) context.tr('daily medicine', 'ubat harian'),
-      if (p.pet) context.tr('pet', 'haiwan peliharaan'),
+      if (p.elderly > 0) context.tr('${p.elderly} aged 60+', '${p.elderly} berumur 60+', '${p.elderly} 名60岁以上'),
+      if (p.babies > 0) context.tr('${p.babies} baby or toddler', '${p.babies} bayi', '${p.babies} 名婴幼儿'),
+      if (p.children > 0) context.tr('${p.children} ${p.children == 1 ? 'child' : 'children'}', '${p.children} kanak-kanak', '${p.children} 名儿童'),
+      if (p.mobility > 0) context.tr('${p.mobility} with wheelchair or walking aid', '${p.mobility} dengan kerusi roda atau alat bantu jalan', '${p.mobility} 人使用轮椅或助行器'),
+      if (p.dailyMedicine) context.tr('daily medicine', 'ubat harian', '每日服药'),
+      if (p.powerMachine) context.tr('oxygen or machine', 'oksigen atau mesin', '氧气机或医疗设备'),
+      if (p.pets > 0) context.tr('${p.pets} ${p.pets == 1 ? 'pet' : 'pets'}', '${p.pets} haiwan peliharaan', '${p.pets} 只宠物'),
     ];
     return AppCard(
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
