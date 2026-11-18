@@ -7,7 +7,7 @@ void main() {
   late ResourcePoint depot;
   setUp(() async {
     w = World();
-    depot = await w.resources.addPoint(admin, name: 'Segamat Depot', location: GeoPoint(2.51, 102.81));
+    depot = await w.resources.addPoint(admin, district: kDistrict, name: 'Segamat Depot', location: GeoPoint(2.51, 102.81));
   });
   DateTime inDays(int d) => kNow.add(Duration(days: d));
 
@@ -17,11 +17,13 @@ void main() {
       await expectLater(w.resources.addPoint(officer, name: 'Third', location: GeoPoint(2, 102)),
           throwsA(isA<PermissionDeniedException>()));
       await expectLater(w.resources.listPoints(null), throwsA(isA<NotSignedInException>()));
-      expect(await w.resources.listPoints(officer), hasLength(2));
+      expect(await w.resources.listPoints(coordinator), hasLength(2));
+      // A field officer sees only their own resource point (res-1, the Segamat Depot).
+      expect([for (final p in await w.resources.listPoints(officer)) p.name], ['Segamat Depot']);
     });
     test('blank and duplicate names are refused', () async {
-      await expectLater(w.resources.addPoint(admin, name: '', location: GeoPoint(2, 102)), throwsA(isA<ValidationException>()));
-      await expectLater(w.resources.addPoint(admin, name: 'segamat depot', location: GeoPoint(2, 102)), throwsA(isA<ConflictException>()));
+      await expectLater(w.resources.addPoint(admin, district: kDistrict, name: '', location: GeoPoint(2, 102)), throwsA(isA<ValidationException>()));
+      await expectLater(w.resources.addPoint(admin, district: kDistrict, name: 'segamat depot', location: GeoPoint(2, 102)), throwsA(isA<ConflictException>()));
     });
     test('field officer can add stock and change quantity', () async {
       final i = await w.resources.addItem(officer, resourcePointId: depot.id, name: ' Rice 10kg ', quantity: 40);
@@ -39,14 +41,14 @@ void main() {
       final i = await w.resources.addItem(admin, resourcePointId: depot.id, name: 'Water', quantity: 1);
       await expectLater(w.resources.removePoint(admin, depot.id), throwsA(isA<ConflictException>()));
       await w.itemTable.remove(i.id);
-      final e = await w.evacuation.add(admin, name: 'Hall', location: GeoPoint(2.5, 102.8), capacity: 10, resourcePointId: depot.id);
+      final e = await w.evacuation.add(admin, district: kDistrict, name: 'Hall', location: GeoPoint(2.5, 102.8), capacity: 10, resourcePointId: depot.id);
       await expectLater(w.resources.removePoint(admin, depot.id), throwsA(isA<ConflictException>()));
       await w.evacuation.remove(admin, e.id);
       await w.resources.removePoint(admin, depot.id);
       expect(await w.resources.listPoints(admin), isEmpty);
     });
     test('list stock for one point', () async {
-      final other = await w.resources.addPoint(admin, name: 'Other', location: GeoPoint(2, 102));
+      final other = await w.resources.addPoint(admin, district: kDistrict, name: 'Other', location: GeoPoint(2, 102));
       await w.resources.addItem(admin, resourcePointId: depot.id, name: 'A', quantity: 1);
       await w.resources.addItem(admin, resourcePointId: other.id, name: 'B', quantity: 1);
       expect(await w.resources.listItems(admin), hasLength(2));
@@ -83,7 +85,7 @@ void main() {
     late EvacuationPoint hall;
     setUp(() async {
       water = await w.resources.addCatalogueUnit(admin, name: 'Drinking water', unit: 'litre', dailyNeedPerPerson: 3);
-      hall = await w.evacuation.add(admin, name: 'Hall', location: GeoPoint(2.5, 102.8), capacity: 100, resourcePointId: depot.id);
+      hall = await w.evacuation.add(admin, district: kDistrict, name: 'Hall', location: GeoPoint(2.5, 102.8), capacity: 100, resourcePointId: depot.id);
     });
     Future<InventoryItem> stock(double qty, {DateTime? expiry, bool mapped = true}) async {
       final i = await w.resources.addItem(admin, resourcePointId: depot.id, name: 'Water', quantity: qty, expiryDate: expiry);
@@ -146,9 +148,9 @@ void main() {
     });
     test('counts reports, shelters, expiry and shortages together', () async {
       final water = await w.resources.addCatalogueUnit(admin, name: 'Water', unit: 'l', dailyNeedPerPerson: 3);
-      final a = await w.evacuation.add(admin, name: 'A', location: GeoPoint(2.5, 102.8), capacity: 10, resourcePointId: depot.id);
-      final b = await w.evacuation.add(admin, name: 'B', location: GeoPoint(2.5, 102.8), capacity: 10);
-      await w.evacuation.add(admin, name: 'C', location: GeoPoint(2.5, 102.8), capacity: 10);
+      final a = await w.evacuation.add(admin, district: kDistrict, name: 'A', location: GeoPoint(2.5, 102.8), capacity: 10, resourcePointId: depot.id);
+      final b = await w.evacuation.add(admin, district: kDistrict, name: 'B', location: GeoPoint(2.5, 102.8), capacity: 10);
+      await w.evacuation.add(admin, district: kDistrict, name: 'C', location: GeoPoint(2.5, 102.8), capacity: 10);
       await w.evacuation.setOccupancy(admin, a.id, 10);
       await w.evacuation.setOpen(admin, b.id, false);
       final i = await w.resources.addItem(admin, resourcePointId: depot.id, name: 'Water', quantity: 30, expiryDate: inDays(5));
@@ -157,7 +159,7 @@ void main() {
       await w.report(by: 'user-2');
       await w.reports.verify(admin, 'rep-1');
 
-      final o = await w.overview.load(officer);
+      final o = await w.overview.load(coordinator);
       expect(o.pendingReports, 1);
       expect(o.sheltersOpen, 2);
       expect(o.sheltersFull, 1);
@@ -168,10 +170,17 @@ void main() {
       final o = await w.overview.load(admin);
       expect([for (final s in o.riskNearby) s.station.id], ['JHR-AWAT', 'JHR-SEGKECIL', 'JHR-BULOH']);
     });
-    test('staff with an assigned point see only warnings within 50 km', () async {
-      final far = await w.resources.addPoint(admin, name: 'KL Depot', location: GeoPoint(3.14, 101.69));
-      expect((await w.overview.load(sess(StaffRole.coordinator, point: far.id))).riskNearby, isEmpty);
-      expect((await w.overview.load(sess(StaffRole.coordinator, point: depot.id))).riskNearby, hasLength(3));
+    test('field officers see only warnings within 50 km of their resource point', () async {
+      final far = await w.resources.addPoint(admin, district: kDistrict, name: 'KL Depot', location: GeoPoint(3.14, 101.69));
+      StaffSession at(String point) =>
+          sess(StaffRole.fieldOfficer, point: point, pointDistrict: kDistrict);
+      expect((await w.overview.load(at(far.id))).riskNearby, isEmpty);
+      expect((await w.overview.load(at(depot.id))).riskNearby, hasLength(3));
+    });
+    test('the field officer overview counts only the centres their point supplies', () async {
+      await w.evacuation.add(admin, district: kDistrict, name: 'Mine', location: GeoPoint(2.5, 102.8), capacity: 10, resourcePointId: depot.id);
+      await w.evacuation.add(admin, district: kDistrict, name: 'Not mine', location: GeoPoint(2.5, 102.8), capacity: 10);
+      expect((await w.overview.load(officer)).sheltersOpen, 1);
     });
   });
 }

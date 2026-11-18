@@ -1,4 +1,4 @@
-// Tests supabase/schema.sql on a local Postgres (PGlite), with a small
+// Tests supabase/schema.sql and staff_districts.sql on a local Postgres (PGlite), with a small
 // stand-in for Supabase Auth. Run:  npm install && npm test
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
@@ -15,23 +15,35 @@ await db.exec(`
 `);
 await db.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
 await db.exec(readFileSync(new URL('../readings.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../staff_districts.sql', import.meta.url), 'utf8'));
+// Loaded too, to check every file applies cleanly in the documented order.
+await db.exec(readFileSync(new URL('../alerts.sql', import.meta.url), 'utf8'));
+await db.exec(readFileSync(new URL('../routing.sql', import.meta.url), 'utf8'));
 
 const U = (n) => `00000000-0000-0000-0000-${String(n).padStart(12, '0')}`;
 const [ADMIN, COORD, OFFICER, ALICE, BOB, EXSTAFF] = [1, 2, 3, 4, 5, 6].map(U);
 const RP = U(100), EV = U(200), CU = U(300), ITEM = U(400);
+const RP2 = U(101), EV2 = U(201), ITEM2 = U(401);
 
 // Seed as the database owner (like the Supabase SQL Editor).
 await db.exec(`
   insert into auth.users select ('00000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid from generate_series(1, 6) g;
-  insert into public.resource_points (id, name, lat, lon) values ('${RP}', 'Depot', 2.5, 102.8);
-  insert into public.staff_profiles (id, full_name, username, role, assigned_resource_point_id, active) values
-    ('${ADMIN}', 'Admin', 'admin', 'super_admin', null, true),
-    ('${COORD}', 'Coord', 'coord', 'coordinator', '${RP}', true),
-    ('${OFFICER}', 'Officer', 'officer', 'field_officer', null, true),
-    ('${EXSTAFF}', 'Left', 'left', 'coordinator', '${RP}', false);
-  insert into public.evacuation_points (id, name, lat, lon, capacity) values ('${EV}', 'Hall', 2.5, 102.8, 50);
+  -- Test stations (made-up positions) so new damage reports get a district.
+  insert into public.jps_stations (station_code, name, district, lat, lon) values
+    ('TEST-K', 'Test Klang', 'KLANG', 2.5, 102.8), ('TEST-S', 'Test Sepang', 'SEPANG', 2.7, 101.7);
+  insert into public.resource_points (id, name, lat, lon, district) values
+    ('${RP}', 'Depot', 2.5, 102.8, 'KLANG'), ('${RP2}', 'Sepang Depot', 2.7, 101.7, 'SEPANG');
+  insert into public.staff_profiles (id, full_name, username, role, assigned_resource_point_id, assigned_district, active) values
+    ('${ADMIN}', 'Admin', 'admin', 'super_admin', null, null, true),
+    ('${COORD}', 'Coord', 'coord', 'coordinator', null, 'KLANG', true),
+    ('${OFFICER}', 'Officer', 'officer', 'field_officer', '${RP}', null, true),
+    ('${EXSTAFF}', 'Left', 'left', 'coordinator', null, 'KLANG', false);
+  insert into public.evacuation_points (id, name, lat, lon, capacity, district, resource_point_id) values
+    ('${EV}', 'Hall', 2.5, 102.8, 50, 'KLANG', '${RP}'),
+    ('${EV2}', 'Sepang Hall', 2.7, 101.7, 50, 'SEPANG', '${RP2}');
   insert into public.catalogue_units (id, name, unit, daily_need_per_person) values ('${CU}', 'Water', 'litre', 3);
-  insert into public.inventory_items (id, resource_point_id, name, quantity) values ('${ITEM}', '${RP}', 'Water 1.5L', 10);
+  insert into public.inventory_items (id, resource_point_id, name, quantity) values
+    ('${ITEM}', '${RP}', 'Water 1.5L', 10), ('${ITEM2}', '${RP2}', 'Rice', 4);
 `);
 
 // Run SQL as a given role + user. Returns { rows, count } or { error }.
@@ -60,7 +72,7 @@ const report = (extra = '') =>
 
 console.log('SQL1 Not signed in (anon)');
 let r = await as('anon', null, 'select name from public.evacuation_points');
-check('can read evacuation points', r.rows?.length === 1, r);
+check('can read evacuation points', r.rows?.length === 2, r);
 for (const t of ['damage_reports', 'headcounts', 'staff_profiles', 'inventory_items', 'resource_points', 'catalogue_units']) {
   r = await as('anon', null, `select * from public.${t}`);
   check(`cannot read ${t}`, !!r.error, r);
@@ -120,15 +132,17 @@ check('cannot change shelter occupancy', denied(r), r);
 r = await pub(ALICE, `insert into public.inventory_items (resource_point_id, name, quantity) values ('${RP}', 'x', 1)`);
 check('cannot add stock', !!r.error, r);
 
-console.log('SQL5 Field officer');
+console.log('SQL5 Field officer (and review by a coordinator)');
 r = await pub(OFFICER, 'select id from public.damage_reports');
-check('sees all reports', r.rows?.length === 6, r);
-r = await pub(OFFICER, `update public.damage_reports set status = 'rejected' where id = '${aliceReport}'`);
+check('sees the reports in their district', r.rows?.length === 6, r);
+r = await pub(OFFICER, `update public.damage_reports set status = 'verified' where id = '${aliceReport}'`);
+check('cannot review a report', denied(r), r);
+r = await pub(COORD, `update public.damage_reports set status = 'rejected' where id = '${aliceReport}'`);
 check('reject without a note refused', !!r.error, r);
-r = await pub(OFFICER, `update public.damage_reports set status = 'verified', lat = 9, reviewed_by = '${ADMIN}' where id = '${aliceReport}' returning lat, reviewed_by, reviewed_at`);
-check('verify: reviewer recorded automatically, report content unchanged',
-  r.rows?.[0]?.lat === 2.5 && r.rows[0].reviewed_by === OFFICER && r.rows[0].reviewed_at != null, r);
-r = await pub(OFFICER, `update public.damage_reports set status = 'rejected', staff_note = 'x' where id = '${aliceReport}'`);
+r = await pub(COORD, `update public.damage_reports set status = 'verified', lat = 9, district = 'SEPANG', reviewed_by = '${ADMIN}' where id = '${aliceReport}' returning lat, district, reviewed_by, reviewed_at`);
+check('verify: reviewer recorded automatically, report content and district unchanged',
+  r.rows?.[0]?.lat === 2.5 && r.rows[0].district === 'KLANG' && r.rows[0].reviewed_by === COORD && r.rows[0].reviewed_at != null, r);
+r = await pub(COORD, `update public.damage_reports set status = 'rejected', staff_note = 'x' where id = '${aliceReport}'`);
 check('a reviewed report cannot be reviewed again', !!r.error, r);
 r = await pub(ALICE, `select status from public.damage_reports where id = '${aliceReport}'`);
 check('reporter sees the new status', r.rows?.[0]?.status === 'verified', r);
@@ -151,15 +165,15 @@ check('sees only own staff profile', r.rows?.length === 1 && r.rows[0].id === OF
 r = await pub(OFFICER, `update public.staff_profiles set role = 'super_admin' where id = '${OFFICER}'`);
 check('cannot promote themselves', denied(r), r);
 r = await pub(OFFICER, 'select * from public.headcounts');
-check('sees all headcounts', r.rows?.length === 2, r);
+check('sees headcounts at the centres their point supplies only', r.rows?.length === 1 && r.rows[0].household_id === ALICE, r);
 
 console.log('SQL6 Coordinator');
 r = await pub(COORD, `update public.inventory_items set catalogue_unit_id = '${CU}' where id = '${ITEM}'`);
 check('can map inventory', r.count === 1, r);
-r = await pub(COORD, `insert into public.evacuation_points (name, lat, lon, capacity) values ('School', 2.6, 102.9, 30) returning id`);
+r = await pub(COORD, `insert into public.evacuation_points (name, lat, lon, capacity, district) values ('School', 2.6, 102.9, 30, 'KLANG') returning id`);
 const school = r.rows?.[0]?.id;
-check('can add an evacuation point', !!school, r);
-r = await pub(COORD, `insert into public.evacuation_points (name, lat, lon, capacity) values ('school', 2.6, 102.9, 30)`);
+check('can add an evacuation point in their district', !!school, r);
+r = await pub(COORD, `insert into public.evacuation_points (name, lat, lon, capacity, district) values ('school', 2.6, 102.9, 30, 'KLANG')`);
 check('duplicate name refused', !!r.error, r);
 r = await pub(COORD, `delete from public.evacuation_points where id = '${EV}'`);
 check('cannot delete a centre with people recorded', !!r.error, r);
@@ -176,14 +190,72 @@ check('sees no reports', r.rows?.length === 0, r);
 r = await pub(EXSTAFF, `update public.inventory_items set quantity = 0 where id = '${ITEM}'`);
 check('cannot change stock', denied(r), r);
 
+console.log('SQL10 Staff areas (district / resource point)');
+r = await pub(ALICE, `insert into public.damage_reports (lat, lon, incident_date, type, severity, district) values (2.7, 101.7, current_date, 'road', 'minor', 'KLANG') returning id, district`);
+const sepangReport = r.rows?.[0]?.id;
+check('report district comes from the nearest station, not the reporter', r.rows?.[0]?.district === 'SEPANG', r);
+r = await pub(BOB, `insert into public.damage_reports (lat, lon, incident_date, type, severity) values (5.5, 100.3, current_date, 'road', 'minor') returning district`);
+check('no station within 25 km: no district', r.rows?.length === 1 && r.rows[0].district === null, r);
+r = await pub(COORD, 'select district from public.damage_reports');
+check('coordinator sees only reports in their district', r.rows?.length > 0 && r.rows.every((x) => x.district === 'KLANG'), r);
+r = await pub(OFFICER, `select id from public.damage_reports where id = '${sepangReport}'`);
+check('field officer cannot see a report in another district', r.rows?.length === 0, r);
+r = await pub(COORD, `update public.damage_reports set status = 'verified' where id = '${sepangReport}'`);
+check('coordinator cannot review a report in another district', denied(r), r);
+r = await pub(ADMIN, 'select id from public.damage_reports where district is null');
+check('Super Admin sees reports with no district', r.rows?.length === 1, r);
+r = await pub(COORD, 'select name from public.resource_points');
+check('coordinator sees resource points in their district only', r.rows?.length === 1 && r.rows[0].name === 'Depot', r);
+r = await pub(COORD, 'select name from public.inventory_items');
+check('coordinator sees stock in their district only', r.rows?.length === 1, r);
+r = await pub(COORD, `update public.inventory_items set quantity = 0 where id = '${ITEM2}'`);
+check('coordinator cannot change stock in another district', denied(r), r);
+r = await pub(COORD, `insert into public.resource_points (name, lat, lon, district) values ('Far', 2.7, 101.7, 'SEPANG')`);
+check('coordinator cannot add a resource point in another district', !!r.error, r);
+r = await pub(COORD, `insert into public.resource_points (name, lat, lon, district) values ('Near', 2.5, 102.8, 'KLANG')`);
+check('coordinator can add a resource point in their district', r.count === 1, r);
+r = await pub(COORD, `insert into public.evacuation_points (name, lat, lon, capacity, district) values ('Far Hall', 2.7, 101.7, 9, 'SEPANG')`);
+check('coordinator cannot add a centre in another district', !!r.error, r);
+r = await pub(COORD, `update public.evacuation_points set occupancy = 1 where id = '${EV2}'`);
+check('coordinator cannot update a centre in another district', denied(r), r);
+r = await pub(COORD, `update public.evacuation_points set district = 'SEPANG' where id = '${EV}'`);
+check('coordinator cannot move a centre out of their district', !!r.error, r);
+r = await pub(OFFICER, 'select name from public.resource_points');
+check('field officer sees only their own resource point', r.rows?.length === 1 && r.rows[0].name === 'Depot', r);
+r = await pub(OFFICER, `update public.inventory_items set quantity = 0 where id = '${ITEM2}'`);
+check('field officer cannot change stock at another point', denied(r), r);
+r = await pub(OFFICER, `insert into public.inventory_items (resource_point_id, name, quantity) values ('${RP2}', 'x', 1)`);
+check('field officer cannot add stock at another point', !!r.error, r);
+r = await pub(OFFICER, `update public.evacuation_points set occupancy = 1 where id = '${EV2}'`);
+check('field officer cannot update a centre their point does not supply', denied(r), r);
+await pub(BOB, `update public.headcounts set evacuation_point_id = '${EV2}' where household_id = '${BOB}'`);
+r = await pub(COORD, `select household_id from public.headcounts where household_id = '${BOB}'`);
+check('coordinator cannot see a headcount at a centre in another district', r.rows?.length === 0, r);
+r = await pub(ADMIN, `insert into public.resource_points (name, lat, lon) values ('No district', 2, 102)`);
+check('a new resource point needs a district', !!r.error, r);
+r = await pub(ADMIN, `insert into public.evacuation_points (name, lat, lon, capacity) values ('No district', 2, 102, 5)`);
+check('a new centre needs a district', !!r.error, r);
+r = await pub(ADMIN, 'select id from public.inventory_items');
+check('Super Admin sees stock everywhere', r.rows?.length === 2, r);
+r = await as('anon', null, 'select name from public.districts');
+check('anyone can read the district list', r.rows?.length === 9, r);
+r = await pub(ALICE, `insert into public.districts values ('NEW')`);
+check('nobody can change the district list', !!r.error, r);
+r = await as('anon', null, 'select public.staff_district()');
+check('the public cannot call the area helpers', !!r.error, r);
+
 console.log('SQL8 Super Admin');
 r = await pub(ADMIN, 'select id from public.staff_profiles');
 check('sees all staff', r.rows?.length === 4, r);
 r = await pub(ADMIN, `insert into public.staff_profiles (id, full_name, username, role) values ('${BOB}', 'Bob', 'bob', 'coordinator')`);
-check('coordinator without a resource point refused', !!r.error, r);
-r = await pub(ADMIN, `insert into public.staff_profiles (id, full_name, username, role) values ('${BOB}', 'Bob', 'Bad Name', 'field_officer')`);
-check('bad username refused', !!r.error, r);
+check('coordinator without a district refused', !!r.error, r);
 r = await pub(ADMIN, `insert into public.staff_profiles (id, full_name, username, role) values ('${BOB}', 'Bob', 'bob', 'field_officer')`);
+check('field officer without a resource point refused', !!r.error, r);
+r = await pub(ADMIN, `insert into public.staff_profiles (id, full_name, username, role, assigned_district) values ('${BOB}', 'Bob', 'bob', 'coordinator', 'ATLANTIS')`);
+check('unknown district refused', !!r.error, r);
+r = await pub(ADMIN, `insert into public.staff_profiles (id, full_name, username, role, assigned_resource_point_id) values ('${BOB}', 'Bob', 'Bad Name', 'field_officer', '${RP}')`);
+check('bad username refused', !!r.error, r);
+r = await pub(ADMIN, `insert into public.staff_profiles (id, full_name, username, role, assigned_resource_point_id) values ('${BOB}', 'Bob', 'bob', 'field_officer', '${RP}')`);
 check('can create staff', r.count === 1, r);
 r = await pub(BOB, 'select id from public.inventory_items');
 check('the new staff member now has staff access', r.rows?.length === 1, r);
@@ -213,7 +285,7 @@ r = await as('service_role', null, `insert into public.jps_stations (station_cod
 check('the logger can add a station', r.count === 1, r);
 r = await as('anon', null, 'select level_m from public.jps_river_levels');
 check('anyone can read readings', r.rows?.length === 1, r);
-r = await as('anon', null, 'select name from public.jps_stations');
+r = await as('anon', null, `select name from public.jps_stations where station_code = 'BKLG0002L'`);
 check('anyone can read stations', r.rows?.length === 1, r);
 for (const [who, uid] of [['anon', null], ['authenticated', ALICE], ['authenticated', ADMIN]]) {
   r = await as(who, uid, `insert into public.jps_river_levels (station_code, observed_at, level_m) values ('X', now(), 9)`);

@@ -14,8 +14,9 @@ void main() {
       expect(AccessControl.can(StaffRole.coordinator, Permission.managePoints), isTrue);
       expect(AccessControl.can(StaffRole.coordinator, Permission.mapInventory), isTrue);
     });
-    test('Field Officer: day-to-day work only', () {
-      expect(AccessControl.can(StaffRole.fieldOfficer, Permission.reviewReports), isTrue);
+    test('Field Officer: day-to-day work only (sees reports, does not review them)', () {
+      expect(AccessControl.can(StaffRole.fieldOfficer, Permission.viewReports), isTrue);
+      expect(AccessControl.can(StaffRole.fieldOfficer, Permission.reviewReports), isFalse);
       expect(AccessControl.can(StaffRole.fieldOfficer, Permission.updateStock), isTrue);
       expect(AccessControl.can(StaffRole.fieldOfficer, Permission.managePoints), isFalse);
       expect(AccessControl.can(StaffRole.fieldOfficer, Permission.mapInventory), isFalse);
@@ -45,12 +46,15 @@ void main() {
     setUp(() async {
       w = World();
       await w.staffTable.put('root', StaffAccount(id: 'root', fullName: 'Root', username: 'root', role: StaffRole.superAdmin));
-      await w.pointTable.put('rp1', ResourcePoint(id: 'rp1', name: 'Depot', location: GeoPoint(2.5, 102.8)));
+      await w.pointTable.put('rp1', ResourcePoint(id: 'rp1', name: 'Depot', location: GeoPoint(2.5, 102.8), district: kDistrict));
       root = await w.staff.sessionFor('root');
     });
-    Future<StaffAccount> make(String id, StaffRole role, {String? user, String? point, String? phone, StaffSession? as}) =>
+    // Field officers get resource point rp1 unless the test says otherwise.
+    Future<StaffAccount> make(String id, StaffRole role,
+            {String? user, String? point, String? district, String? phone, StaffSession? as}) =>
         w.staff.create(as ?? root, authUserId: id, fullName: 'Name $id', username: user ?? 'user.$id',
-            role: role, assignedResourcePointId: point, phone: phone);
+            role: role, phone: phone, assignedDistrict: district,
+            assignedResourcePointId: point ?? (role == StaffRole.fieldOfficer ? 'rp1' : null));
 
     test('login: staff gets a session, others are refused', () async {
       expect(root.account.role, StaffRole.superAdmin);
@@ -82,10 +86,32 @@ void main() {
       await expectLater(make('u2', StaffRole.fieldOfficer, user: 'ALI'), throwsA(isA<ConflictException>()));
       await expectLater(make('u1', StaffRole.fieldOfficer, user: 'other'), throwsA(isA<ConflictException>()));
     });
-    test('coordinator needs an existing resource point', () async {
+    test('coordinator needs a known district', () async {
       await expectLater(make('u1', StaffRole.coordinator), throwsA(isA<ValidationException>()));
-      await expectLater(make('u1', StaffRole.coordinator, point: 'nope'), throwsA(isA<NotFoundException>()));
-      expect((await make('u1', StaffRole.coordinator, point: 'rp1')).assignedResourcePointId, 'rp1');
+      await expectLater(make('u1', StaffRole.coordinator, district: 'Atlantis'), throwsA(isA<ValidationException>()));
+      expect((await make('u1', StaffRole.coordinator, district: ' kuala  selangor ')).assignedDistrict,
+          'KUALA SELANGOR');
+    });
+    test('field officer needs an existing resource point', () async {
+      await expectLater(
+          w.staff.create(root, authUserId: 'u1', fullName: 'N', username: 'nopoint', role: StaffRole.fieldOfficer),
+          throwsA(isA<ValidationException>()));
+      await expectLater(make('u1', StaffRole.fieldOfficer, point: 'nope'), throwsA(isA<NotFoundException>()));
+      expect((await make('u1', StaffRole.fieldOfficer)).assignedResourcePointId, 'rp1');
+    });
+    test("a field officer's session knows their resource point's district", () async {
+      await make('u1', StaffRole.fieldOfficer);
+      expect((await w.staff.sessionFor('u1')).district, kDistrict);
+      await make('u2', StaffRole.coordinator, district: kOtherDistrict);
+      expect((await w.staff.sessionFor('u2')).district, kOtherDistrict);
+      expect(root.district, isNull);
+    });
+    test('assign changes the area; the role rules still apply', () async {
+      await make('u1', StaffRole.coordinator, district: kDistrict);
+      expect((await w.staff.assign(root, 'u1', district: kOtherDistrict)).assignedDistrict, kOtherDistrict);
+      await expectLater(w.staff.assign(root, 'u1'), throwsA(isA<ValidationException>()));
+      await expectLater(w.staff.assign(coordinator, 'u1', district: kDistrict),
+          throwsA(isA<PermissionDeniedException>()));
     });
     test('deactivated staff cannot log in again', () async {
       await make('u1', StaffRole.fieldOfficer);
@@ -108,6 +134,7 @@ void main() {
     test('change role, and unknown id', () async {
       await make('u1', StaffRole.fieldOfficer);
       expect((await w.staff.changeRole(root, 'u1', StaffRole.superAdmin)).role, StaffRole.superAdmin);
+      // A coordinator needs a district, which u1 does not have.
       await expectLater(w.staff.changeRole(root, 'u1', StaffRole.coordinator), throwsA(isA<ValidationException>()));
       await expectLater(w.staff.changeRole(root, 'zzz', StaffRole.fieldOfficer), throwsA(isA<NotFoundException>()));
     });

@@ -6,12 +6,12 @@ void main() {
   late World w;
   setUp(() async {
     w = World();
-    await w.evacuation.add(admin, name: 'Open Hall', location: GeoPoint(2.52, 102.82), capacity: 10);
-    await w.evacuation.add(admin, name: 'Full Hall', location: GeoPoint(2.53, 102.83), capacity: 5);
-    await w.evacuation.add(admin, name: 'Closed Hall', location: GeoPoint(2.54, 102.84), capacity: 5);
+    await w.evacuation.add(admin, district: kDistrict, name: 'Open Hall', location: GeoPoint(2.52, 102.82), capacity: 10);
+    await w.evacuation.add(admin, district: kDistrict, name: 'Full Hall', location: GeoPoint(2.53, 102.83), capacity: 5);
+    await w.evacuation.add(admin, district: kDistrict, name: 'Closed Hall', location: GeoPoint(2.54, 102.84), capacity: 5);
     await w.evacuation.setOccupancy(admin, 'evac-2', 5);
     await w.evacuation.setOpen(admin, 'evac-3', false);
-    await w.resources.addPoint(admin, name: 'Depot', location: GeoPoint(2.51, 102.81));
+    await w.resources.addPoint(admin, district: kDistrict, name: 'Depot', location: GeoPoint(2.51, 102.81));
   });
   Map<String, MapMarker> byId(MapData d) => {for (final m in d.markers) m.id: m};
 
@@ -79,8 +79,8 @@ void main() {
     test('staff only', () async {
       await expectLater(w.map.operationsMap(null), throwsA(isA<NotSignedInException>()));
     });
-    test('all shelters with status, warehouses, and only stations at Alert or above', () async {
-      final d = await w.map.operationsMap(officer);
+    test('all shelters in the area with status, warehouses, and only stations at Alert or above', () async {
+      final d = await w.map.operationsMap(coordinator);
       final m = byId(d);
       expect(m['evac-1']!.style, MarkerStyle.shelterOpen);
       expect(m['evac-2']!.style, MarkerStyle.shelterFull);

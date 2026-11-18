@@ -68,13 +68,19 @@ class HeadcountService {
     if (e != null) await entries.remove(e.id);
   }
 
-  /// Staff: totals per evacuation point, plus a grand total.
+  /// Staff: totals per evacuation point, plus a grand total, for the centres
+  /// in the staff member's area. Households not at a centre (or at a removed
+  /// centre) are counted for Super Admins only.
   Future<HeadcountSummary> summary(StaffSession? session) async {
     AccessControl.require(session, Permission.viewOperations);
-    final names = {for (final p in await evacuationPoints.all()) p.id: p.name};
+    final centres = {for (final p in await evacuationPoints.all()) p.id: p};
+    final names = {for (final p in centres.values) p.id: p.name};
+    final admin = session!.account.role == StaffRole.superAdmin;
     final rows = <String?, HeadcountRow>{};
     final grand = HeadcountRow(null, 'Total');
     for (final e in await entries.all()) {
+      final centre = centres[e.evacuationPointId];
+      if (!admin && (centre == null || !session.coversCentre(centre))) continue;
       final key = e.evacuationPointId;
       final row = rows.putIfAbsent(
           key,

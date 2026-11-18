@@ -167,7 +167,9 @@ class ForecastService {
         worstCaseRisk: t == null ? null : _risk(raw.highM, t),
         summary: summary,
         reasons: [for (final f in factors.take(maxReasons)) describeFactor(f)],
-        isPracticeData: file.isPracticeData);
+        isPracticeData: file.isPracticeData,
+        currentRisk: currentRisk,
+        factors: factors.take(maxReasons).toList());
   }
 
   RiskLevel _risk(double level, Thresholds t) {

@@ -12,14 +12,14 @@ void main() {
     test('report: public submits -> staff rejects with note -> public sees it', () async {
       final r = await w.report(by: 'me');
       expect((await w.reports.list(officer, status: ReportStatus.pending)).single.id, r.id);
-      await w.reports.reject(officer, r.id, note: 'Wrong location');
+      await w.reports.reject(coordinator, r.id, note: 'Wrong location');
       final mine = (await w.reports.mine('me')).single;
       expect(mine.status, ReportStatus.rejected);
       expect(mine.staffNote, 'Wrong location');
       expect((await w.overview.load(officer)).pendingReports, 0);
     });
     test('relief flow: point -> centre -> headcount -> occupancy -> shortage -> restock', () async {
-      final depot = await w.resources.addPoint(admin, name: 'Depot', location: GeoPoint(2.51, 102.81));
+      final depot = await w.resources.addPoint(admin, district: kDistrict, name: 'Depot', location: GeoPoint(2.51, 102.81));
       final hall = await w.evacuation.add(coordinator, name: 'Hall', location: GeoPoint(2.52, 102.82), capacity: 20, resourcePointId: depot.id);
       final water = await w.resources.addCatalogueUnit(coordinator, name: 'Water', unit: 'l', dailyNeedPerPerson: 3);
       final item = await w.resources.addItem(officer, resourcePointId: depot.id, name: 'Water', quantity: 30);
@@ -34,10 +34,11 @@ void main() {
       await w.resources.setQuantity(officer, item.id, 90);
       expect((await w.overview.load(coordinator)).supplyAlerts, isEmpty);
     });
-    test('staff login to action: created officer can review, deactivated one cannot log in', () async {
+    test('staff login to action: created coordinator can review, deactivated one cannot log in', () async {
       await w.staffTable.put('root', StaffAccount(id: 'root', fullName: 'Root', username: 'root', role: StaffRole.superAdmin));
       final root = await w.staff.sessionFor('root');
-      await w.staff.create(root, authUserId: 'u1', fullName: 'Ali', username: 'ali', role: StaffRole.fieldOfficer);
+      await w.staff.create(root, authUserId: 'u1', fullName: 'Ali', username: 'ali',
+          role: StaffRole.coordinator, assignedDistrict: kDistrict);
       final ali = await w.staff.sessionFor('u1');
       final r = await w.report();
       expect((await w.reports.verify(ali, r.id)).reviewedBy, 'u1');
@@ -72,6 +73,8 @@ void main() {
         () => w.staff.create(null, authUserId: 'a', fullName: 'a', username: 'abc', role: StaffRole.fieldOfficer),
         () => w.staff.setActive(null, 'x', false),
         () => w.staff.changeRole(null, 'x', StaffRole.fieldOfficer),
+        () => w.staff.assign(null, 'x', district: kDistrict),
+        () => w.evacuation.listForStaff(null),
         () => w.overview.load(null),
       ];
       for (final call in calls) {

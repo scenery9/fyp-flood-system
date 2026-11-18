@@ -57,14 +57,14 @@ void main() {
       expect((await w.map.liveMap(showStations: false)).markers.single.style, MarkerStyle.shelterOpen);
       expect((await w.assistant.ask('nearest shelter', userLocation: here)).text, contains('Dewan A'));
 
-      await w.evacuation.setOccupancy(officer, hall.id, 2); // now full
+      await w.evacuation.setOccupancy(coordinator, hall.id, 2); // now full
       expect(await routes.toNearest(here), isNull);
       expect((await w.map.liveMap(showStations: false)).markers.single.style, MarkerStyle.shelterFull);
       expect((await w.assistant.ask('nearest shelter', userLocation: here)).text, contains('No relief centre'));
     });
     test('operations map and staff overview agree on shelters', () async {
-      await w.evacuation.add(admin, name: 'A', location: GeoPoint(2.5, 102.8), capacity: 5);
-      final b = await w.evacuation.add(admin, name: 'B', location: GeoPoint(2.6, 102.9), capacity: 5);
+      await w.evacuation.add(admin, district: kDistrict, name: 'A', location: GeoPoint(2.5, 102.8), capacity: 5);
+      final b = await w.evacuation.add(admin, district: kDistrict, name: 'B', location: GeoPoint(2.6, 102.9), capacity: 5);
       await w.evacuation.setOpen(admin, b.id, false);
       final o = await w.overview.load(admin);
       final m = await w.map.operationsMap(admin);

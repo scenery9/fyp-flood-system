@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../data/supabase_api.dart';
 import '../errors.dart';
 import '../models/evacuation_point.dart';
 import '../models/route.dart';
@@ -11,37 +12,40 @@ abstract class RouteProvider {
   Future<RoutePlan> route(GeoPoint from, GeoPoint to);
 }
 
-/// Downloads a web address and returns the body as text. The Flutter app
-/// passes a small function built on the `http` package; tests pass a fake.
-typedef HttpGet = Future<String> Function(Uri uri);
-
-/// Road routes from openrouteservice (free key from openrouteservice.org).
-/// Keep the key out of GitHub: pass it at build time, e.g.
-///   flutter run --dart-define=ORS_KEY=your_key
-class OrsRouteProvider implements RouteProvider {
-  OrsRouteProvider({required this.apiKey, required this.get, this.profile = 'driving-car'});
-  final String apiKey;
-  final HttpGet get;
+/// Road routes through the project's own Edge Function (supabase/functions/route).
+/// The openrouteservice key stays on the server, so it cannot be copied out
+/// of the app; the function also limits how many routes each phone may ask for.
+class EdgeRouteProvider implements RouteProvider {
+  EdgeRouteProvider(this.api, {this.profile = 'driving-car', this.language = 'en'});
+  final SupabaseApi api;
   final String profile;
 
-  /// Note: openrouteservice wants longitude first.
-  Uri buildUri(GeoPoint from, GeoPoint to) =>
-      Uri.https('api.openrouteservice.org', '/v2/directions/$profile', {
-        'api_key': apiKey,
-        'start': '${from.lon},${from.lat}',
-        'end': '${to.lon},${to.lat}',
-      });
+  /// Language of the turn-by-turn steps ('en' or 'zh'; others fall back to English).
+  final String language;
+
+  Map<String, Object?> body(GeoPoint from, GeoPoint to) => {
+        'from': {'lat': from.lat, 'lon': from.lon},
+        'to': {'lat': to.lat, 'lon': to.lon},
+        'profile': profile,
+        'language': language,
+      };
 
   @override
   Future<RoutePlan> route(GeoPoint from, GeoPoint to) async {
-    if (apiKey.trim().isEmpty) throw RoutingException('Missing openrouteservice key');
-    final String body;
+    final HttpReply r;
     try {
-      body = await get(buildUri(from, to));
-    } catch (e) {
+      r = await api.function('route', body(from, to));
+    } catch (_) {
       throw RoutingException('Could not reach the routing service');
     }
-    return parseOrsDirections(body, from: from, to: to);
+    if (r.status == 429) throw RoutingException('Too many route requests. Try again in a minute.');
+    if (r.status == 401) throw RoutingException('Could not sign in to the routing service');
+    if (!r.ok) {
+      // Error replies carry {"error": {"message": ...}}; this throws with that message.
+      parseOrsDirections(r.body, from: from, to: to);
+      throw RoutingException('Routing service error (${r.status})');
+    }
+    return parseOrsDirections(r.body, from: from, to: to);
   }
 }
 

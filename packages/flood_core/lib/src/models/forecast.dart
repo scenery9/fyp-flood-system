@@ -65,6 +65,8 @@ class StationForecast {
     required this.summary,
     required this.reasons,
     required this.isPracticeData,
+    this.currentRisk,
+    this.factors = const [],
   });
   final String stationId;
   final int horizonHours;
@@ -89,6 +91,13 @@ class StationForecast {
   /// Up to three plain-language reasons ("Kenapa?").
   final List<String> reasons;
   final bool isPracticeData;
+
+  /// Risk level of the current reading the forecast started from (null without thresholds).
+  final RiskLevel? currentRisk;
+
+  /// The inputs behind [reasons], in the same order, so the app can word
+  /// them in other languages.
+  final List<ForecastFactor> factors;
 
   static const String disclaimer = 'This is a computer prediction, not an official warning.';
 }

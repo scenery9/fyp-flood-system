@@ -103,19 +103,100 @@ void main() {
       await w.alerts.setRiskRule('A', RiskLevel.alert);
       expect(await run(), isEmpty);
     });
+    void after(int minutes) => w.clock = w.clock.add(Duration(minutes: minutes));
+
     test('fires once when the level is reached, not again on the next refresh', () async {
       await w.alerts.setRiskRule('A', RiskLevel.warning);
       river('A', 14.5);
       expect(await run(), ['A']);
       expect(await run(), isEmpty);
-      river('A', 16.5); // gets worse: still the same rule, already notified
+    });
+    test('fires again when the river moves up a level', () async {
+      await w.alerts.setRiskRule('A', RiskLevel.alert);
+      river('A', 12.5); // Alert
+      expect(await run(), ['A']);
+      river('A', 14.5); // Warning
+      final e = await w.alerts.evaluate(await w.monitoring.loadStatuses());
+      expect(e.single.reason, AlertReason.escalated);
+      expect(e.single.message, contains('Warning'));
+      river('A', 13); // back down to Alert: no alert for going down
       expect(await run(), isEmpty);
     });
-    test('fires again after the river drops and rises again', () async {
+    test('repeats every 45 minutes while at Danger', () async {
+      await w.alerts.setRiskRule('A', RiskLevel.warning);
+      river('A', 16.5);
+      expect(await run(), ['A']);
+      after(44);
+      expect(await run(), isEmpty);
+      after(1);
+      final e = await w.alerts.evaluate(await w.monitoring.loadStatuses());
+      expect(e.single.reason, AlertReason.dangerRepeat);
+      expect(e.single.message, contains('still at Danger'));
+      after(10);
+      expect(await run(), isEmpty);
+    });
+    test('Warning does not repeat', () async {
+      await w.alerts.setRiskRule('A', RiskLevel.warning);
+      river('A', 14.5);
+      await run();
+      after(300);
+      expect(await run(), isEmpty);
+    });
+    test('a river hovering at the line does not cause a string of alerts', () async {
+      await w.alerts.setRiskRule('A', RiskLevel.warning);
+      river('A', 14.1);
+      expect(await run(), ['A']);
+      river('A', 13.9);
+      after(15);
+      expect(await run(), isEmpty);
+      river('A', 14.1);
+      after(15);
+      expect(await run(), isEmpty); // back within 60 minutes: still the same event
+      river('A', 13.9);
+      after(15);
+      expect(await run(), isEmpty);
+      after(30);
+      expect(await run(), isEmpty);
+      river('A', 14.1);
+      after(1);
+      expect(await run(), isEmpty); // back after 31 minutes below: still the same event
+      river('A', 13.9);
+      after(4);
+      expect(await run(), isEmpty);
+      after(59);
+      expect(await run(), isEmpty); // 59 minutes below
+      after(1);
+      expect(await run(), isEmpty); // 60 minutes below: rule starts again
+      river('A', 14.1);
+      expect(await run(), ['A']);
+    });
+    test('height alert: 0.10 m buffer after it has fired', () async {
+      await w.alerts.setWaterLevelRule('B', 13.5);
+      river('B', 13.5);
+      expect(await run(), ['B']);
+      river('B', 13.41); // within 0.10 m: still counts as reached
+      expect(await run(), isEmpty);
+      after(69);
+      expect(await run(), isEmpty);
+      river('B', 13.5);
+      after(1);
+      expect(await run(), isEmpty); // not reset, so no repeat
+      river('B', 13.39); // more than 0.10 m below: gone
+      expect(await run(), isEmpty);
+      after(60);
+      expect(await run(), isEmpty);
+      river('B', 13.45); // must reach 13.50 again, the buffer only applies after firing
+      expect(await run(), isEmpty);
+      river('B', 13.5);
+      expect(await run(), ['B']);
+    });
+    test('fires again after the river drops for an hour and rises again', () async {
       await w.alerts.setRiskRule('A', RiskLevel.warning);
       river('A', 14.5);
       await run();
       river('A', 11);
+      expect(await run(), isEmpty);
+      after(60);
       expect(await run(), isEmpty);
       river('A', 14.5);
       expect(await run(), ['A']);

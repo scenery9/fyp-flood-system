@@ -4,6 +4,7 @@ import '../models/evacuation_point.dart';
 import '../models/staff.dart';
 import '../util/geo.dart';
 import 'access_control.dart';
+import 'resource_service.dart';
 
 class NearbyEvacuation {
   NearbyEvacuation(this.point, this.distanceKm);
@@ -43,22 +44,33 @@ class EvacuationService {
 
   // ---------- staff ----------
 
+  /// Centres inside the staff member's area (Coordinator: their district;
+  /// Field Officer: the centres their resource point supplies).
+  Future<List<EvacuationPoint>> listForStaff(StaffSession? session) async {
+    AccessControl.require(session, Permission.viewOperations);
+    return (await points.all()).where(session!.coversCentre).toList();
+  }
+
+  /// [district] may be left out by a Coordinator (their own district is used).
   Future<EvacuationPoint> add(
     StaffSession? session, {
     required String name,
     required GeoPoint location,
     required int capacity,
     String? resourcePointId,
+    String? district,
   }) async {
     AccessControl.require(session, Permission.managePoints);
     final n = name.trim();
     if (n.isEmpty) throw ValidationException('Name is required');
     if (capacity <= 0) throw ValidationException('Capacity must be more than 0');
+    final d = ResourceService.pickDistrict(session!, district);
     if ((await points.all()).any((p) => p.name.toLowerCase() == n.toLowerCase())) {
       throw ConflictException('An evacuation point with this name already exists');
     }
     final p = EvacuationPoint(
-        id: newId(), name: n, location: location, capacity: capacity, resourcePointId: resourcePointId);
+        id: newId(), name: n, location: location, capacity: capacity,
+        resourcePointId: resourcePointId, district: d);
     await points.put(p.id, p);
     return p;
   }
@@ -67,6 +79,7 @@ class EvacuationService {
   Future<void> remove(StaffSession? session, String id) async {
     AccessControl.require(session, Permission.managePoints);
     final p = await _get(id);
+    AccessControl.requireArea(session!.coversCentre(p));
     if (p.occupancy > 0) throw ConflictException('Centre still has ${p.occupancy} people recorded');
     await points.remove(id);
   }
@@ -74,6 +87,7 @@ class EvacuationService {
   Future<EvacuationPoint> setOccupancy(StaffSession? session, String id, int occupancy) async {
     AccessControl.require(session, Permission.updateOccupancy);
     final p = await _get(id);
+    AccessControl.requireArea(session!.coversCentre(p));
     if (occupancy < 0 || occupancy > p.capacity) {
       throw ValidationException('Occupancy must be between 0 and ${p.capacity}');
     }
@@ -84,7 +98,9 @@ class EvacuationService {
 
   Future<EvacuationPoint> setOpen(StaffSession? session, String id, bool isOpen) async {
     AccessControl.require(session, Permission.updateOccupancy);
-    final updated = (await _get(id)).copyWith(isOpen: isOpen);
+    final p = await _get(id);
+    AccessControl.requireArea(session!.coversCentre(p));
+    final updated = p.copyWith(isOpen: isOpen);
     await points.put(id, updated);
     return updated;
   }

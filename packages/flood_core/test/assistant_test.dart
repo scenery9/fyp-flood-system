@@ -6,8 +6,8 @@ void main() {
   late World w;
   setUp(() async {
     w = World();
-    await w.evacuation.add(admin, name: 'Dewan Segamat', location: GeoPoint(2.51, 102.81), capacity: 100);
-    await w.evacuation.add(admin, name: 'SK Kajang', location: GeoPoint(2.99, 101.79), capacity: 100);
+    await w.evacuation.add(admin, district: kDistrict, name: 'Dewan Segamat', location: GeoPoint(2.51, 102.81), capacity: 100);
+    await w.evacuation.add(admin, district: kDistrict, name: 'SK Kajang', location: GeoPoint(2.99, 101.79), capacity: 100);
   });
   Future<AssistantAnswer> ask(String q, {GeoPoint? at}) => w.assistant.ask(q, userLocation: at);
 

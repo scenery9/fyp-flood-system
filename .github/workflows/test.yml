@@ -14,6 +14,20 @@ jobs:
       - run: dart analyze
       - run: dart test
 
+  app:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
   access_rules:
     runs-on: ubuntu-latest
     defaults:
@@ -26,6 +40,18 @@ jobs:
           node-version: lts/*
       - run: npm install
       - run: npm test
+
+  edge_functions:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - run: node --test tests/*.test.ts
 
   ml:
     runs-on: ubuntu-latest

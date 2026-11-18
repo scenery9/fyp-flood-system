@@ -1,4 +1,5 @@
 import '../models/damage_report.dart';
+import '../models/district.dart';
 import '../models/resources.dart';
 import '../models/staff.dart';
 import '../models/station_status.dart';
@@ -25,8 +26,8 @@ class StaffOverview {
   final int sheltersOpen;
   final int sheltersFull;
 
-  /// Active flood warnings near the staff member's resource point
-  /// (all active warnings if they have no assigned point).
+  /// Active flood warnings near the staff member's resource point, or in a
+  /// Coordinator's district (all active warnings for a Super Admin).
   final List<StationStatus> riskNearby;
 }
 
@@ -52,10 +53,12 @@ class StaffOverviewService {
         : await resources.points.byId(me.assignedResourcePointId!);
     final statuses = await monitoring.loadStatuses(userLocation: home?.location);
     var risk = const WarningService().active(statuses);
-    if (home != null) {
+    if (me.role == StaffRole.coordinator) {
+      risk = risk.where((s) => normaliseDistrict(s.station.district) == me.assignedDistrict).toList();
+    } else if (home != null) {
       risk = risk.where((s) => s.distanceKm != null && s.distanceKm! <= nearbyKm).toList();
     }
-    final centres = await evacuation.listAll();
+    final centres = await evacuation.listForStaff(session);
     return StaffOverview(
         pendingReports: (await reports.counts(session))[ReportStatus.pending]!,
         expiringItems: await resources.expiringItems(session),

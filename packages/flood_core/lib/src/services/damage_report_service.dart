@@ -1,17 +1,52 @@
+import '../data/station_repository.dart';
 import '../data/table.dart';
 import '../errors.dart';
 import '../models/damage_report.dart';
+import '../models/district.dart';
 import '../models/staff.dart';
 import '../util/geo.dart';
 import 'access_control.dart';
 
+/// Works out which district a place is in. Returns null when unknown.
+typedef DistrictLocator = Future<String?> Function(GeoPoint place);
+
+/// District of the nearest station with a position, if it is within [maxKm]
+/// and is a Selangor district. Same rule as the database trigger in
+/// supabase/staff_districts.sql (which is what counts on the live system).
+DistrictLocator nearestStationDistrict(StationRepository repository, {double maxKm = 25}) =>
+    (place) async {
+      String? best;
+      var bestKm = double.infinity;
+      for (final s in await repository.getStations()) {
+        final loc = s.location;
+        final d = normaliseDistrict(s.district);
+        if (loc == null || d == null) continue;
+        final km = distanceKm(place, loc);
+        if (km < bestKm) {
+          bestKm = km;
+          best = d;
+        }
+      }
+      return bestKm <= maxKm ? best : null;
+    };
+
 /// Flood damage reports: public submit + tracking, staff review.
+/// Staff see reports in their own district only (Super Admin: all); only
+/// Super Admins and Coordinators review them.
 class DamageReportService {
-  DamageReportService({required this.reports, required this.newId, DateTime Function()? clock})
-      : _clock = clock ?? DateTime.now;
+  DamageReportService({
+    required this.reports,
+    required this.newId,
+    DateTime Function()? clock,
+    this.locateDistrict,
+  }) : _clock = clock ?? DateTime.now;
   final Table<DamageReport> reports;
   final IdGenerator newId;
   final DateTime Function() _clock;
+
+  /// Sets each new report's district. Without it, reports have no district
+  /// and only Super Admins see them.
+  final DistrictLocator? locateDistrict;
 
   /// Anti-spam: one reporter may have at most this many unreviewed reports.
   static const int maxPendingPerReporter = 5;
@@ -48,9 +83,16 @@ class DamageReportService {
     if (pending >= maxPendingPerReporter) {
       throw ConflictException('You have $pending reports waiting for review. Please wait.');
     }
+    String? district;
+    try {
+      district = await locateDistrict?.call(location);
+    } catch (_) {
+      district = null; // an unknown district must not block a report
+    }
     final r = DamageReport(
         id: newId(), reporterId: reporterId, location: location, incidentDate: incidentDate,
-        type: type, severity: severity, depthM: depthM, description: text, createdAt: now);
+        type: type, severity: severity, depthM: depthM, description: text, createdAt: now,
+        district: district);
     await reports.put(r.id, r);
     return r;
   }
@@ -64,8 +106,11 @@ class DamageReportService {
 
   /// All reports, or one status. Pending: oldest first (a queue). Others: newest first.
   Future<List<DamageReport>> list(StaffSession? session, {ReportStatus? status}) async {
-    AccessControl.require(session, Permission.reviewReports);
-    final l = (await reports.all()).where((r) => status == null || r.status == status).toList();
+    AccessControl.require(session, Permission.viewReports);
+    final l = (await reports.all())
+        .where((r) => session!.coversDistrict(r.district))
+        .where((r) => status == null || r.status == status)
+        .toList();
     if (status == ReportStatus.pending) {
       l.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     } else {
@@ -75,9 +120,9 @@ class DamageReportService {
   }
 
   Future<Map<ReportStatus, int>> counts(StaffSession? session) async {
-    AccessControl.require(session, Permission.reviewReports);
+    AccessControl.require(session, Permission.viewReports);
     final m = {for (final s in ReportStatus.values) s: 0};
-    for (final r in await reports.all()) {
+    for (final r in await list(session)) {
       m[r.status] = m[r.status]! + 1;
     }
     return m;
@@ -99,6 +144,7 @@ class DamageReportService {
     AccessControl.require(session, Permission.reviewReports);
     if (ofId == id) throw ValidationException('A report cannot be a duplicate of itself');
     final original = await reports.byId(ofId) ?? (throw NotFoundException('report', ofId));
+    AccessControl.requireArea(session!.coversDistrict(original.district));
     if (original.status == ReportStatus.duplicate || original.status == ReportStatus.rejected) {
       throw ConflictException('The original report is itself ${original.status.name}');
     }
@@ -109,6 +155,7 @@ class DamageReportService {
       {String? note, String? duplicateOfId}) async {
     final me = AccessControl.require(session, Permission.reviewReports);
     final r = await reports.byId(id) ?? (throw NotFoundException('report', id));
+    AccessControl.requireArea(session!.coversDistrict(r.district));
     if (r.status != ReportStatus.pending) {
       throw ConflictException('Report was already ${r.status.name}');
     }

@@ -1,5 +1,6 @@
 import '../data/table.dart';
 import '../errors.dart';
+import '../models/district.dart';
 import '../models/resources.dart';
 import '../models/staff.dart';
 import 'access_control.dart';
@@ -16,10 +17,16 @@ class StaffAccountService {
 
   /// Turns a logged-in Auth user into a staff session. Throws
   /// [PermissionDeniedException] if the user is not staff or was deactivated.
+  /// For a Field Officer the district of their resource point is looked up
+  /// here, so the session knows which damage reports they may see.
   Future<StaffSession> sessionFor(String authUserId) async {
     final a = await accounts.byId(authUserId);
     if (a == null || !a.active) throw PermissionDeniedException('staff');
-    return StaffSession(a);
+    String? pointDistrict;
+    if (a.role == StaffRole.fieldOfficer && a.assignedResourcePointId != null) {
+      pointDistrict = (await resourcePoints.byId(a.assignedResourcePointId!))?.district;
+    }
+    return StaffSession(a, resourcePointDistrict: pointDistrict);
   }
 
   Future<List<StaffAccount>> list(StaffSession? session) async {
@@ -35,6 +42,7 @@ class StaffAccountService {
     required StaffRole role,
     String? phone,
     String? assignedResourcePointId,
+    String? assignedDistrict,
   }) async {
     AccessControl.require(session, Permission.manageStaff);
     final name = fullName.trim();
@@ -48,22 +56,29 @@ class StaffAccountService {
     if (tel != null && tel.isNotEmpty && !_phonePattern.hasMatch(tel)) {
       throw ValidationException('Phone number is not valid');
     }
-    if (role == StaffRole.coordinator && assignedResourcePointId == null) {
-      throw ValidationException('A coordinator needs an assigned resource point');
-    }
-    if (assignedResourcePointId != null &&
-        await resourcePoints.byId(assignedResourcePointId) == null) {
-      throw NotFoundException('resource point', assignedResourcePointId);
-    }
+    final district = await _checkArea(role, assignedDistrict, assignedResourcePointId);
     final existing = await accounts.all();
     if (existing.any((a) => a.id == authUserId)) throw ConflictException('Account already exists');
     if (existing.any((a) => a.username == user)) throw ConflictException('Username already taken');
     final account = StaffAccount(
         id: authUserId, fullName: name, username: user, role: role,
         phone: (tel == null || tel.isEmpty) ? null : tel,
-        assignedResourcePointId: assignedResourcePointId);
+        assignedResourcePointId: assignedResourcePointId, assignedDistrict: district);
     await accounts.put(account.id, account);
     return account;
+  }
+
+  /// Sets the area a staff member works in (district and/or resource point).
+  Future<StaffAccount> assign(StaffSession? session, String id,
+      {String? district, String? resourcePointId}) async {
+    AccessControl.require(session, Permission.manageStaff);
+    final target = await _get(id);
+    final d = await _checkArea(target.role, district, resourcePointId);
+    final updated = target.copyWith(
+        assignedDistrict: d, clearDistrict: d == null,
+        assignedResourcePointId: resourcePointId, clearResourcePoint: resourcePointId == null);
+    await accounts.put(id, updated);
+    return updated;
   }
 
   /// Activates or deactivates an account. You cannot deactivate yourself
@@ -85,12 +100,29 @@ class StaffAccountService {
     AccessControl.require(session, Permission.manageStaff);
     final target = await _get(id);
     if (role != StaffRole.superAdmin) await _guardLastSuperAdmin(target);
-    if (role == StaffRole.coordinator && target.assignedResourcePointId == null) {
-      throw ValidationException('A coordinator needs an assigned resource point');
-    }
+    await _checkArea(role, target.assignedDistrict, target.assignedResourcePointId);
     final updated = target.copyWith(role: role);
     await accounts.put(id, updated);
     return updated;
+  }
+
+  /// Coordinators need a district; Field Officers need a resource point.
+  /// Returns the district in its official spelling (or null).
+  Future<String?> _checkArea(StaffRole role, String? district, String? resourcePointId) async {
+    final d = normaliseDistrict(district);
+    if (district != null && district.trim().isNotEmpty && d == null) {
+      throw ValidationException('Unknown district: $district');
+    }
+    if (role == StaffRole.coordinator && d == null) {
+      throw ValidationException('A coordinator needs an assigned district');
+    }
+    if (role == StaffRole.fieldOfficer && resourcePointId == null) {
+      throw ValidationException('A field officer needs an assigned resource point');
+    }
+    if (resourcePointId != null && await resourcePoints.byId(resourcePointId) == null) {
+      throw NotFoundException('resource point', resourcePointId);
+    }
+    return d;
   }
 
   Future<StaffAccount> _get(String id) async =>

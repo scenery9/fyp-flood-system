@@ -22,6 +22,7 @@ class DamageReport {
     this.reviewedBy,
     this.reviewedAt,
     this.duplicateOfId,
+    this.district,
   });
   final String id;
   final String reporterId;
@@ -40,6 +41,10 @@ class DamageReport {
   final DateTime? reviewedAt;
   final String? duplicateOfId;
 
+  /// Worked out from the nearest JPS station (within 25 km) when submitted;
+  /// null if none is close. Decides which staff can see the report.
+  final String? district;
+
   DamageReport reviewed({
     required ReportStatus status,
     required String by,
@@ -51,5 +56,5 @@ class DamageReport {
           id: id, reporterId: reporterId, location: location, incidentDate: incidentDate,
           type: type, severity: severity, createdAt: createdAt, depthM: depthM,
           description: description, status: status, staffNote: note, reviewedBy: by,
-          reviewedAt: at, duplicateOfId: duplicateOfId);
+          reviewedAt: at, duplicateOfId: duplicateOfId, district: district);
 }

@@ -1,5 +1,6 @@
 import '../data/table.dart';
 import '../errors.dart';
+import '../models/district.dart';
 import '../models/evacuation_point.dart';
 import '../models/resources.dart';
 import '../models/staff.dart';
@@ -7,6 +8,8 @@ import '../util/geo.dart';
 import 'access_control.dart';
 
 /// Staff: resource points, stock, catalogue mapping, expiry and supply alerts.
+/// Every list only contains what is inside the staff member's area
+/// (see [StaffSession.coversResourcePoint]); changes outside it are refused.
 class ResourceService {
   ResourceService({
     required this.points,
@@ -27,18 +30,20 @@ class ResourceService {
 
   Future<List<ResourcePoint>> listPoints(StaffSession? session) async {
     AccessControl.require(session, Permission.viewOperations);
-    return points.all();
+    return (await points.all()).where(session!.coversResourcePoint).toList();
   }
 
+  /// [district] may be left out by a Coordinator (their own district is used).
   Future<ResourcePoint> addPoint(StaffSession? session,
-      {required String name, required GeoPoint location}) async {
+      {required String name, required GeoPoint location, String? district}) async {
     AccessControl.require(session, Permission.managePoints);
     final n = name.trim();
     if (n.isEmpty) throw ValidationException('Name is required');
+    final d = pickDistrict(session!, district);
     if ((await points.all()).any((p) => p.name.toLowerCase() == n.toLowerCase())) {
       throw ConflictException('A resource point with this name already exists');
     }
-    final p = ResourcePoint(id: newId(), name: n, location: location);
+    final p = ResourcePoint(id: newId(), name: n, location: location, district: d);
     await points.put(p.id, p);
     return p;
   }
@@ -46,7 +51,7 @@ class ResourceService {
   /// Deletes a resource point. Refused while it holds stock or supplies a centre.
   Future<void> removePoint(StaffSession? session, String id) async {
     AccessControl.require(session, Permission.managePoints);
-    await _point(id);
+    AccessControl.requireArea(session!.coversResourcePoint(await _point(id)));
     if ((await items.all()).any((i) => i.resourcePointId == id)) {
       throw ConflictException('Resource point still has stock items');
     }
@@ -60,7 +65,9 @@ class ResourceService {
 
   Future<List<InventoryItem>> listItems(StaffSession? session, {String? resourcePointId}) async {
     AccessControl.require(session, Permission.viewOperations);
+    final mine = {for (final p in await listPoints(session)) p.id};
     return (await items.all())
+        .where((i) => mine.contains(i.resourcePointId))
         .where((i) => resourcePointId == null || i.resourcePointId == resourcePointId)
         .toList();
   }
@@ -73,7 +80,7 @@ class ResourceService {
     DateTime? expiryDate,
   }) async {
     AccessControl.require(session, Permission.updateStock);
-    await _point(resourcePointId);
+    AccessControl.requireArea(session!.coversResourcePoint(await _point(resourcePointId)));
     if (name.trim().isEmpty) throw ValidationException('Item name is required');
     _checkQuantity(quantity);
     final i = InventoryItem(
@@ -86,7 +93,9 @@ class ResourceService {
   Future<InventoryItem> setQuantity(StaffSession? session, String itemId, double quantity) async {
     AccessControl.require(session, Permission.updateStock);
     _checkQuantity(quantity);
-    final updated = (await _item(itemId)).copyWith(quantity: quantity);
+    final item = await _item(itemId);
+    await _requireItemArea(session!, item);
+    final updated = item.copyWith(quantity: quantity);
     await items.put(itemId, updated);
     return updated;
   }
@@ -118,6 +127,7 @@ class ResourceService {
   Future<InventoryItem> mapItem(StaffSession? session, String itemId, String? catalogueUnitId) async {
     AccessControl.require(session, Permission.mapInventory);
     final item = await _item(itemId);
+    await _requireItemArea(session!, item);
     if (catalogueUnitId != null && await catalogue.byId(catalogueUnitId) == null) {
       throw NotFoundException('catalogue unit', catalogueUnitId);
     }
@@ -137,7 +147,7 @@ class ResourceService {
   Future<List<InventoryItem>> expiringItems(StaffSession? session, {int withinDays = 30}) async {
     AccessControl.require(session, Permission.viewOperations);
     final limit = _clock().add(Duration(days: withinDays));
-    return (await items.all())
+    return (await listItems(session))
         .where((i) => i.quantity > 0 && i.expiryDate != null && !i.expiryDate!.isAfter(limit))
         .toList()
       ..sort((a, b) => a.expiryDate!.compareTo(b.expiryDate!));
@@ -153,7 +163,7 @@ class ResourceService {
     final units = await catalogue.all();
     final centres = await evacuationPoints.all();
     final alerts = <SupplyAlert>[];
-    for (final p in await points.all()) {
+    for (final p in await listPoints(session)) {
       final people = centres
           .where((e) => e.resourcePointId == p.id && e.isOpen)
           .fold<int>(0, (sum, e) => sum + e.occupancy);
@@ -169,6 +179,28 @@ class ResourceService {
       }
     }
     return alerts..sort((a, b) => a.daysLeft.compareTo(b.daysLeft));
+  }
+
+  /// The district for a new point or centre: a Coordinator's own district
+  /// (they may not choose another one); a Super Admin must choose one.
+  static String pickDistrict(StaffSession session, String? district) {
+    final chosen = normaliseDistrict(district);
+    if (district != null && district.trim().isNotEmpty && chosen == null) {
+      throw ValidationException('Unknown district: $district');
+    }
+    if (session.account.role == StaffRole.superAdmin) {
+      if (chosen == null) throw ValidationException('Choose a district');
+      return chosen;
+    }
+    final own = session.district;
+    if (own == null) throw PermissionDeniedException('outside your area');
+    AccessControl.requireArea(chosen == null || chosen == own);
+    return own;
+  }
+
+  Future<void> _requireItemArea(StaffSession session, InventoryItem item) async {
+    final p = await points.byId(item.resourcePointId);
+    AccessControl.requireArea(p != null && session.coversResourcePoint(p));
   }
 
   Future<ResourcePoint> _point(String id) async =>

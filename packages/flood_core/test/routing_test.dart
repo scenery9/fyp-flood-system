@@ -52,13 +52,23 @@ void main() {
   final from = GeoPoint(2.50, 102.80), to = GeoPoint(2.52, 102.82);
 
   group('TP31 openrouteservice', () {
-    test('request address puts longitude first and carries the key', () {
-      final uri = OrsRouteProvider(apiKey: 'KEY', get: (_) async => '').buildUri(from, to);
-      expect(uri.host, 'api.openrouteservice.org');
-      expect(uri.path, '/v2/directions/driving-car');
-      expect(uri.queryParameters['start'], '102.8,2.5');
-      expect(uri.queryParameters['end'], '102.82,2.52');
-      expect(uri.queryParameters['api_key'], 'KEY');
+    test('the app asks its own Edge Function, never openrouteservice directly', () async {
+      final http = FakeHttp()..reply('/functions/v1/route', 200, orsReply());
+      final provider = EdgeRouteProvider(http.api(), language: 'zh');
+      expect((await provider.route(from, to)).steps, hasLength(3));
+      final call = http.calls.last;
+      expect(call.uri.host, 'demo.supabase.co');
+      expect(call.uri.path, '/functions/v1/route');
+      expect(call.headers['Authorization'], 'Bearer access-1');
+      expect(call.headers['apikey'], 'sb_publishable_test');
+      expect(call.json, {
+        'from': {'lat': 2.5, 'lon': 102.8},
+        'to': {'lat': 2.52, 'lon': 102.82},
+        'profile': 'driving-car',
+        'language': 'zh',
+      });
+      // No openrouteservice key anywhere in what the phone sends.
+      expect(http.calls.any((c) => c.uri.host.contains('openrouteservice') || c.uri.host.contains('heigit')), isFalse);
     });
     test('reply is turned into distance, time, steps and a path', () {
       final p = parseOrsDirections(orsReply(), from: from, to: to);
@@ -70,20 +80,20 @@ void main() {
       expect(p.path.first.lat, 2.50); // converted back to latitude first
       expect(p.path.first.lon, 102.80);
     });
-    test('provider fetches and parses', () async {
-      Uri? seen;
-      final provider = OrsRouteProvider(apiKey: 'KEY', get: (u) async {
-        seen = u;
-        return orsReply();
-      });
-      expect((await provider.route(from, to)).steps, hasLength(3));
-      expect(seen!.queryParameters['start'], '102.8,2.5');
-    });
-    test('network failure, missing key and error replies become RoutingException', () async {
-      final down = OrsRouteProvider(apiKey: 'KEY', get: (_) async => throw StateError('no internet'));
-      await expectLater(down.route(from, to), throwsA(isA<RoutingException>()));
-      final noKey = OrsRouteProvider(apiKey: ' ', get: (_) async => orsReply());
-      await expectLater(noKey.route(from, to), throwsA(isA<RoutingException>()));
+    test('busy service, sign-in failure, network failure and error replies become RoutingException', () async {
+      for (final (status, body) in [
+        (429, '{"error": {"message": "Too many route requests"}}'),
+        (401, '{"message": "Invalid JWT"}'),
+        (500, 'oops'),
+        (503, '{"error": {"message": "Routing is busy, try again later"}}'),
+        (200, '{"error": {"message": "should not happen"}}'),
+        (502, '{"error": {"code": 2010, "message": "Could not find routable point"}}'),
+      ]) {
+        final http = FakeHttp()..reply('/functions/v1/route', status, body);
+        await expectLater(EdgeRouteProvider(http.api()).route(from, to), throwsA(isA<RoutingException>()));
+      }
+      final down = FakeHttp()..offline = true;
+      await expectLater(EdgeRouteProvider(down.api()).route(from, to), throwsA(isA<RoutingException>()));
       for (final bad in [
         'not json', '[]', '{}', '{"features": []}',
         '{"error": {"code": 2010, "message": "Could not find routable point"}}',
@@ -116,8 +126,8 @@ void main() {
       store = InMemoryRouteStore();
       svc = EvacuationRouteService(
           evacuation: w.evacuation, provider: provider, store: store, clock: () => now);
-      await w.evacuation.add(admin, name: 'Near Hall', location: to, capacity: 10);
-      await w.evacuation.add(admin, name: 'Far Hall', location: GeoPoint(3.5, 103.5), capacity: 10);
+      await w.evacuation.add(admin, district: kDistrict, name: 'Near Hall', location: to, capacity: 10);
+      await w.evacuation.add(admin, district: kDistrict, name: 'Far Hall', location: GeoPoint(3.5, 103.5), capacity: 10);
     });
 
     test('online: live route to the nearest centre', () async {

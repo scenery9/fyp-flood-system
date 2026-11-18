@@ -7,9 +7,10 @@ void main() {
   final user = GeoPoint(0, 100);
   setUp(() async {
     w = World();
-    await w.evacuation.add(admin, name: 'Far Hall', location: GeoPoint(0, 102), capacity: 100);
-    await w.evacuation.add(admin, name: 'Near School', location: GeoPoint(0, 100.1), capacity: 50);
-    await w.evacuation.add(admin, name: 'Mid Mosque', location: GeoPoint(0, 101), capacity: 10);
+    // All three are supplied by res-1, the test field officer's resource point.
+    await w.evacuation.add(admin, district: kDistrict, resourcePointId: 'res-1', name: 'Far Hall', location: GeoPoint(0, 102), capacity: 100);
+    await w.evacuation.add(admin, district: kDistrict, resourcePointId: 'res-1', name: 'Near School', location: GeoPoint(0, 100.1), capacity: 50);
+    await w.evacuation.add(admin, district: kDistrict, resourcePointId: 'res-1', name: 'Mid Mosque', location: GeoPoint(0, 101), capacity: 10);
   });
   List<String> names(List<NearbyEvacuation> l) => [for (final n in l) n.point.name];
 
@@ -50,9 +51,9 @@ void main() {
       expect(await w.evacuation.listAll(), hasLength(4));
     });
     test('bad input and duplicate names', () async {
-      await expectLater(w.evacuation.add(admin, name: ' ', location: user, capacity: 5), throwsA(isA<ValidationException>()));
-      await expectLater(w.evacuation.add(admin, name: 'A', location: user, capacity: 0), throwsA(isA<ValidationException>()));
-      await expectLater(w.evacuation.add(admin, name: 'far hall', location: user, capacity: 5), throwsA(isA<ConflictException>()));
+      await expectLater(w.evacuation.add(admin, district: kDistrict, name: ' ', location: user, capacity: 5), throwsA(isA<ValidationException>()));
+      await expectLater(w.evacuation.add(admin, district: kDistrict, name: 'A', location: user, capacity: 0), throwsA(isA<ValidationException>()));
+      await expectLater(w.evacuation.add(admin, district: kDistrict, name: 'far hall', location: user, capacity: 5), throwsA(isA<ConflictException>()));
     });
     test('field officer can update occupancy and open/close', () async {
       final p = await w.evacuation.setOccupancy(officer, 'evac-1', 100);
@@ -111,11 +112,15 @@ void main() {
       await w.headcount.submit(householdId: 'h2', total: 6, elderly: 2, reducedMobility: 1, evacuationPointId: 'evac-2');
       await w.headcount.submit(householdId: 'h3', total: 3, evacuationPointId: 'evac-2');
       await w.headcount.submit(householdId: 'h4', total: 2);
-      final s = await w.headcount.summary(officer);
+      final s = await w.headcount.summary(admin);
       expect([for (final r in s.rows) r.name], ['Near School', 'Far Hall', 'Not at a centre']);
       expect(s.rows.first.total, 9);
       expect(s.rows.first.households, 2);
       expect(s.grandTotal.total, 15);
+      // Staff limited to an area do not see households that are not at one of their centres.
+      final o = await w.headcount.summary(officer);
+      expect([for (final r in o.rows) r.name], ['Near School', 'Far Hall']);
+      expect(o.grandTotal.total, 13);
       expect(s.grandTotal.babies, 1);
       expect(s.grandTotal.elderly, 2);
       expect(s.grandTotal.reducedMobility, 1);

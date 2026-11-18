@@ -21,3 +21,7 @@ double distanceKm(GeoPoint a, GeoPoint b) {
       math.cos(rad(a.lat)) * math.cos(rad(b.lat)) * math.pow(math.sin(dLon / 2), 2);
   return 2 * earthRadiusKm * math.asin(math.min(1.0, math.sqrt(h)));
 }
+
+/// True when [lat]/[lon] can be made into a [GeoPoint].
+bool validCoordinates(double lat, double lon) =>
+    !lat.isNaN && !lon.isNaN && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;

@@ -24,6 +24,7 @@ export 'src/data/table.dart';
 export 'src/models/alert_rule.dart';
 export 'src/models/app_settings.dart';
 export 'src/models/damage_report.dart';
+export 'src/models/district.dart';
 export 'src/models/evacuation_point.dart';
 export 'src/models/headcount.dart';
 export 'src/models/resources.dart';
@@ -46,3 +47,15 @@ export 'src/models/route.dart';
 export 'src/services/forecast_service.dart';
 export 'src/services/map_service.dart';
 export 'src/services/routing_service.dart';
+
+// Round 4: security
+export 'src/services/household_lock_service.dart';
+
+// Round 5: household profile and personalised preparation checklist
+export 'src/models/household_profile.dart';
+export 'src/services/preparedness_service.dart';
+
+// Round 6: staff areas, live data from Supabase, push alerts, safe routing
+export 'src/data/live_station_repository.dart';
+export 'src/data/supabase_api.dart';
+export 'src/services/push_alert_service.dart';

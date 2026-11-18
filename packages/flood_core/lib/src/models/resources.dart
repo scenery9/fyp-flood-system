@@ -2,10 +2,13 @@ import '../util/geo.dart';
 
 /// A warehouse or store that holds relief supplies.
 class ResourcePoint {
-  ResourcePoint({required this.id, required this.name, required this.location});
+  ResourcePoint({required this.id, required this.name, required this.location, this.district});
   final String id;
   final String name;
   final GeoPoint location;
+
+  /// One of [selangorDistricts]. Null only for rows made before districts existed.
+  final String? district;
 }
 
 /// A standard supply (e.g. "Drinking water", unit "litre", 3 per person per day).

@@ -96,13 +96,13 @@ class MapService {
     return MapData(markers, _bounds(markers), hidden);
   }
 
-  /// Staff Operations Map: every shelter (open, full, closed), warehouses,
-  /// and only the stations that are at Alert or above.
+  /// Staff Operations Map: the shelters (open, full, closed) and warehouses in
+  /// the staff member's area, and only the stations at Alert or above.
   Future<MapData> operationsMap(StaffSession? session) async {
     AccessControl.require(session, Permission.viewOperations);
     final markers = <MapMarker>[];
     var hidden = 0;
-    for (final p in await evacuation.listAll()) {
+    for (final p in await evacuation.listForStaff(session)) {
       markers.add(MapMarker(
           id: p.id, kind: MarkerKind.evacuation, position: p.location, title: p.name,
           style: !p.isOpen

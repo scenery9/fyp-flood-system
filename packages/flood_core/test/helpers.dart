@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flood_core/flood_core.dart';
 
 /// Fixed "now" so every test gives the same result on any day.
@@ -42,14 +44,26 @@ StationStatus assess(Station s, StationReading? r, {GeoPoint? user}) =>
 
 // ---------------- round 2 helpers ----------------
 
-StaffSession sess(StaffRole role, {String id = 'staff-1', String? point, bool active = true}) =>
-    StaffSession(StaffAccount(
-        id: id, fullName: 'Test Staff', username: id, role: role,
-        assignedResourcePointId: point, active: active));
+/// District used by the test staff. [kDistrict] is "theirs"; [kOtherDistrict] is not.
+const kDistrict = 'KLANG';
+const kOtherDistrict = 'SEPANG';
+
+StaffSession sess(StaffRole role,
+        {String id = 'staff-1', String? point, String? district, String? pointDistrict,
+        bool active = true}) =>
+    StaffSession(
+        StaffAccount(
+            id: id, fullName: 'Test Staff', username: id, role: role,
+            assignedResourcePointId: point, assignedDistrict: district, active: active),
+        resourcePointDistrict: pointDistrict);
 
 final admin = sess(StaffRole.superAdmin, id: 'admin');
-final coordinator = sess(StaffRole.coordinator, id: 'coord');
-final officer = sess(StaffRole.fieldOfficer, id: 'officer');
+
+/// Coordinator for [kDistrict].
+final coordinator = sess(StaffRole.coordinator, id: 'coord', district: kDistrict);
+
+/// Field officer at resource point 'res-1' (the first point a test adds), in [kDistrict].
+final officer = sess(StaffRole.fieldOfficer, id: 'officer', point: 'res-1', pointDistrict: kDistrict);
 
 /// Everything wired together with empty in-memory storage and a fixed clock.
 class World {
@@ -58,13 +72,16 @@ class World {
     evacuation = EvacuationService(points: evacTable, newId: sequentialIds('evac'));
     headcount = HeadcountService(
         entries: headcountTable, evacuationPoints: evacTable, newId: sequentialIds('hc'), clock: fixedClock);
-    reports = DamageReportService(reports: reportTable, newId: sequentialIds('rep'), clock: fixedClock);
+    reports = DamageReportService(
+        reports: reportTable, newId: sequentialIds('rep'), clock: fixedClock,
+        locateDistrict: (_) async => reportDistrict);
     resources = ResourceService(
         points: pointTable, items: itemTable, catalogue: catalogueTable,
         evacuationPoints: evacTable, newId: sequentialIds('res'), clock: fixedClock);
     staff = StaffAccountService(accounts: staffTable, resourcePoints: pointTable);
     alerts = AlertService(
-        rules: ruleTable, firedState: firedTable, repository: this.repo, newId: sequentialIds('rule'));
+        rules: ruleTable, firedState: firedTable, repository: this.repo, newId: sequentialIds('rule'),
+        clock: () => clock);
     overview = StaffOverviewService(
         monitoring: monitoring, resources: resources, reports: reports, evacuation: evacuation);
     assistant = AssistantService(monitoring: monitoring, evacuation: evacuation);
@@ -78,8 +95,14 @@ class World {
   final itemTable = MemoryTable<InventoryItem>();
   final catalogueTable = MemoryTable<CatalogueUnit>();
   final staffTable = MemoryTable<StaffAccount>();
+
+  /// Clock for My Alerts; tests move it forward to check repeat timing.
+  DateTime clock = kNow;
+
+  /// District given to new damage reports (stands in for the nearest-station lookup).
+  String? reportDistrict = kDistrict;
   final ruleTable = MemoryTable<AlertRule>();
-  final firedTable = MemoryTable<bool>();
+  final firedTable = MemoryTable<AlertState>();
   late final MonitoringService monitoring;
   late final EvacuationService evacuation;
   late final HeadcountService headcount;
@@ -95,4 +118,58 @@ class World {
       reporterId: by, location: GeoPoint(2.5, 102.8),
       incidentDate: kNow.subtract(Duration(days: daysAgo)),
       type: DamageType.house, severity: DamageSeverity.moderate);
+}
+
+// ---------------- round 6 helpers: a fake Supabase server ----------------
+
+class HttpCall {
+  HttpCall(this.method, this.uri, this.headers, this.body);
+  final String method;
+  final Uri uri;
+  final Map<String, String> headers;
+  final String? body;
+  Object? get json => body == null ? null : jsonDecode(body!);
+}
+
+/// Answers HTTP requests by path. Sign-in is answered automatically with
+/// tokens access-1, access-2, ... unless the test sets its own reply.
+class FakeHttp {
+  final calls = <HttpCall>[];
+  final _replies = <String, List<HttpReply>>{};
+  bool offline = false;
+  int signIns = 0;
+  int refreshes = 0;
+
+  /// Next replies for [path] (the last one repeats).
+  void reply(String path, int status, String body) =>
+      (_replies[path] ??= []).add(HttpReply(status, body));
+
+  Future<HttpReply> send(String method, Uri uri, {Map<String, String> headers = const {}, String? body}) async {
+    calls.add(HttpCall(method, uri, headers, body));
+    if (offline) throw StateError('no internet');
+    final queued = _replies[uri.path];
+    if (queued != null && queued.isNotEmpty) {
+      return queued.length > 1 ? queued.removeAt(0) : queued.first;
+    }
+    if (uri.path == '/auth/v1/signup') return _session(++signIns + refreshes, 'user-$signIns');
+    if (uri.path == '/auth/v1/token') return _session(signIns + ++refreshes, 'user-$signIns');
+    return const HttpReply(404, '{"message": "not found"}');
+  }
+
+  HttpReply _session(int n, String user) => HttpReply(200, jsonEncode({
+        'access_token': 'access-$n',
+        'refresh_token': 'refresh-$n',
+        'expires_in': 3600,
+        'user': {'id': user},
+      }));
+
+  final authStore = InMemorySettingsStore();
+  DateTime now = kNow;
+
+  SupabaseApi api({bool signedIn = true}) {
+    const config = SupabaseConfig(url: 'https://demo.supabase.co', publishableKey: 'sb_publishable_test');
+    return SupabaseApi(
+        config: config, send: send,
+        auth: signedIn ? SupabaseAuth(config: config, send: send, store: authStore, clock: () => now) : null);
+  }
 }
