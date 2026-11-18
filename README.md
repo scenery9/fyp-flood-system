@@ -633,6 +633,7 @@ Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
 | TP91 | app round8_ui_test | unchecked centre listed without route or suggestion, Google Maps by name, estimated capacity |
 | TP92 | flood_core round8_test | each step's stretch of road; highlight follows the phone until chosen by hand; Next / Back stop at the ends |
 | TP93 | app round8_ui_test | Next / Back / tap a step move the highlight, read aloud only when Read aloud is on, each step shown once |
+| TP94 | app round8_ui_test | Add an area: State dropdown starts on the nearest station's state; District dropdown lists only that state's districts and resets when the state changes |
 
 Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
 `npm test` in `supabase/test` (now five files), `python -m pytest` in `logger`.

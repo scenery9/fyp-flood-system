@@ -3,7 +3,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../app/app_controller.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/choices.dart';
 import '../../widgets/common.dart';
 import '../home/station_detail_screen.dart';
 
@@ -105,8 +104,8 @@ class _AreaRow extends StatelessWidget {
   }
 }
 
-/// Pick a station to save: the nearest stations first, district buttons,
-/// and search as a last resort (no typing needed).
+/// Pick a station to save: the nearest stations first, a State then District
+/// dropdown, and search as a last resort (no typing needed).
 class AddAreaScreen extends StatefulWidget {
   const AddAreaScreen({super.key});
 
@@ -116,18 +115,33 @@ class AddAreaScreen extends StatefulWidget {
 
 class _AddAreaScreenState extends State<AddAreaScreen> {
   String _query = '';
-  String? _district; // null = all districts
+  String? _state; // null = all states
+  String? _district; // null = all districts in [_state]
+  bool _startChosen = false;
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final saved = {for (final a in app.areas) a.station.id};
     final q = _query.trim().toLowerCase();
-    final districts = {for (final s in app.statuses) s.station.district}.toList()..sort();
+    final states = {for (final s in app.statuses) s.station.state}.toList()..sort();
+    if (!_startChosen) {
+      // Start on the state of the nearest station when the phone's location is known.
+      _startChosen = true;
+      _state = app.nearest?.station.state;
+    }
+    final state = states.contains(_state) ? _state : null;
+    final districts = {
+      for (final s in app.statuses)
+        if (state == null || s.station.state == state) s.station.district
+    }.toList()
+      ..sort();
+    final district = districts.contains(_district) ? _district : null;
     final list = [
       for (final s in app.statuses)
         if (!saved.contains(s.station.id) &&
-            (_district == null || s.station.district == _district) &&
+            (state == null || s.station.state == state) &&
+            (district == null || s.station.district == district) &&
             (q.isEmpty ||
                 s.station.name.toLowerCase().contains(q) ||
                 s.station.district.toLowerCase().contains(q) ||
@@ -148,15 +162,30 @@ class _AddAreaScreenState extends State<AddAreaScreen> {
         NoteText(app.locationIssue == null
             ? context.tr('Nearest stations first. Tap Add on the one closest to your home.',
                 'Stesen paling dekat dahulu. Tekan Tambah pada stesen paling dekat dengan rumah anda.', '最近的测站在最前面。点击离您家最近测站的“添加”。')
-            : context.tr('Choose your district, then tap Add.', 'Pilih daerah anda, kemudian tekan Tambah.', '选择您的县区，然后点击“添加”。')),
+            : context.tr('Choose your state and district, then tap Add.', 'Pilih negeri dan daerah anda, kemudian tekan Tambah.', '选择您的州和县区，然后点击“添加”。')),
         Padding(
           padding: const EdgeInsets.fromLTRB(kMargin, 12, kMargin, 0),
-          child: ChoiceBoxes<String?>(
-            keyPrefix: 'district',
-            values: [null, ...districts],
-            selected: {_district},
-            label: (d) => d ?? context.tr('All', 'Semua', '全部'),
-            onTap: (d) => setState(() => _district = d),
+          child: _Dropdown(
+            key: const ValueKey('state-menu'),
+            label: context.tr('State', 'Negeri', '州'),
+            value: state,
+            values: states,
+            allLabel: context.tr('All states', 'Semua negeri', '所有州'),
+            onChanged: (v) => setState(() {
+              _state = v;
+              _district = null;
+            }),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(kMargin, 12, kMargin, 0),
+          child: _Dropdown(
+            key: const ValueKey('district-menu'),
+            label: context.tr('District', 'Daerah', '县区'),
+            value: district,
+            values: districts,
+            allLabel: context.tr('All districts', 'Semua daerah', '所有县区'),
+            onChanged: (v) => setState(() => _district = v),
           ),
         ),
         Padding(
@@ -223,6 +252,41 @@ class _AddAreaScreenState extends State<AddAreaScreen> {
               ),
           ]),
       ],
+    );
+  }
+}
+
+/// A labelled dropdown with an "All" choice first (value null).
+class _Dropdown extends StatelessWidget {
+  const _Dropdown({super.key, required this.label, required this.value, required this.values, required this.allLabel, required this.onChanged});
+  final String label;
+  final String? value;
+  final List<String> values;
+  final String allLabel;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: value,
+          isExpanded: true,
+          style: context.text.bodyLarge,
+          items: [
+            DropdownMenuItem<String?>(value: null, child: Text(allLabel)),
+            for (final v in values) DropdownMenuItem<String?>(key: ValueKey('menu-$v'), value: v, child: Text(v)),
+          ],
+          onChanged: onChanged,
+        ),
+      ),
     );
   }
 }

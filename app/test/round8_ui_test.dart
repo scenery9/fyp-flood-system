@@ -1,3 +1,4 @@
+// TP94: Add an area by State, then District.
 // TP91: relief centres from places/centres.csv on screen: a centre whose
 // position was not checked, and capacity that is only an estimate.
 // Sample data; nothing is sent anywhere.
@@ -108,6 +109,31 @@ void main() {
       await tapIt(tester, find.byKey(const ValueKey('centre-route')));
       await tapIt(tester, find.byKey(const ValueKey('step-next')));
       expect(app.speaker.spoken, isEmpty);
+    });
+  });
+  group('TP94 Add an area by state, then district', () {
+    testWidgets('starts on the nearest state; the district list follows the state', (tester) async {
+      await TestApp().start(tester);
+      await tapIt(tester, find.byKey(const ValueKey('change-area')));
+      await tapIt(tester, find.byKey(const ValueKey('add-area')));
+      // the sample phone is near Segamat, so Johor is chosen first
+      expect(find.descendant(of: find.byKey(const ValueKey('state-menu')), matching: find.text('Johor')), findsOneWidget);
+
+      await tapIt(tester, find.byKey(const ValueKey('state-menu')));
+      await tapIt(tester, find.byKey(const ValueKey('menu-Melaka')).last);
+      expect(find.text('Sg. Muar di Kg. Awat'), findsNothing);
+      expect(find.text('Sg. Melaka di Batu Hampar'), findsOneWidget);
+
+      await tapIt(tester, find.byKey(const ValueKey('district-menu')));
+      expect(find.byKey(const ValueKey('menu-Segamat')), findsNothing); // only Melaka's districts
+      await tapIt(tester, find.byKey(const ValueKey('menu-Alor Gajah')).last);
+      expect(find.text('Stesen Hujan Durian Tunggal'), findsOneWidget);
+      expect(find.text('Sg. Melaka di Batu Hampar'), findsNothing);
+
+      // a new state clears the district
+      await tapIt(tester, find.byKey(const ValueKey('state-menu')));
+      await tapIt(tester, find.text('All states').last);
+      expect(find.descendant(of: find.byKey(const ValueKey('district-menu')), matching: find.text('All districts')), findsOneWidget);
     });
   });
 }
