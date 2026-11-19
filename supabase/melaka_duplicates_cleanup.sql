@@ -10,37 +10,60 @@
 -- stations (which the app's saved areas use) stopped getting readings.
 -- This moves the readings from each duplicate onto the original station
 -- (a reading at the same time is kept once) and deletes the duplicate.
+-- A pair whose original station does not exist is left alone (no readings lost).
 --
 -- The other Melaka stations added that day (Bukit Katil, Telok Rimba,
 -- Chohong, ...) are real stations the Melaka site does not list; they stay.
+--
+-- No temporary table: the SQL Editor does not keep one between statements.
+-- The same list of pairs is written in each statement instead:
+--   0270231WL -> 0270231    Sg. Siput di Jamb. Sg. Simpang Ampat
+--   0290161WL -> 2322415    Sg. Durian Tunggal di Bt. 11 Air Resam
+--   0290221WL -> 029022WL   Pintu Air Durian Tunggal D/S
+--   0290301RF -> 2421004    Kg. Sg. Siput (rain)
 -- =====================================================================
 
 begin;
 
-create temporary table melaka_renamed (duplicate text primary key, original text not null) on commit drop;
-insert into melaka_renamed values
-  ('0270231WL', '0270231'),   -- Sg. Siput di Jamb. Sg. Simpang Ampat
-  ('0290161WL', '2322415'),   -- Sg. Durian Tunggal di Bt. 11 Air Resam
-  ('0290221WL', '029022WL'),  -- Pintu Air Durian Tunggal D/S
-  ('0290301RF', '2421004');   -- Kg. Sg. Siput (rain)
-
--- only pairs whose original station exists (never lose readings)
-delete from melaka_renamed m
- where not exists (select 1 from public.jps_stations s where s.station_code = m.original);
-
+-- 1. River readings: copy onto the original station.
 insert into public.jps_river_levels (station_code, observed_at, level_m)
 select m.original, l.observed_at, l.level_m
-  from public.jps_river_levels l join melaka_renamed m on m.duplicate = l.station_code
+  from public.jps_river_levels l
+  join (values ('0270231WL', '0270231'), ('0290161WL', '2322415'),
+               ('0290221WL', '029022WL'), ('0290301RF', '2421004')) as m(duplicate, original)
+    on m.duplicate = l.station_code
+ where exists (select 1 from public.jps_stations s where s.station_code = m.original)
 on conflict (station_code, observed_at) do nothing;
 
+-- 2. Rain readings: copy onto the original station.
 insert into public.jps_rainfall (station_code, observed_at, hourly_mm, today_mm)
 select m.original, r.observed_at, r.hourly_mm, r.today_mm
-  from public.jps_rainfall r join melaka_renamed m on m.duplicate = r.station_code
+  from public.jps_rainfall r
+  join (values ('0270231WL', '0270231'), ('0290161WL', '2322415'),
+               ('0290221WL', '029022WL'), ('0290301RF', '2421004')) as m(duplicate, original)
+    on m.duplicate = r.station_code
+ where exists (select 1 from public.jps_stations s where s.station_code = m.original)
 on conflict (station_code, observed_at) do nothing;
 
-delete from public.jps_river_levels l using melaka_renamed m where l.station_code = m.duplicate;
-delete from public.jps_rainfall r using melaka_renamed m where r.station_code = m.duplicate;
-delete from public.jps_stations s using melaka_renamed m where s.station_code = m.duplicate;
+-- 3. Delete the duplicates' readings and the duplicate stations
+--    (only where the original exists, so nothing is lost).
+delete from public.jps_river_levels l
+ using (values ('0270231WL', '0270231'), ('0290161WL', '2322415'),
+               ('0290221WL', '029022WL'), ('0290301RF', '2421004')) as m(duplicate, original)
+ where l.station_code = m.duplicate
+   and exists (select 1 from public.jps_stations s where s.station_code = m.original);
+
+delete from public.jps_rainfall r
+ using (values ('0270231WL', '0270231'), ('0290161WL', '2322415'),
+               ('0290221WL', '029022WL'), ('0290301RF', '2421004')) as m(duplicate, original)
+ where r.station_code = m.duplicate
+   and exists (select 1 from public.jps_stations s where s.station_code = m.original);
+
+delete from public.jps_stations d
+ using (values ('0270231WL', '0270231'), ('0290161WL', '2322415'),
+               ('0290221WL', '029022WL'), ('0290301RF', '2421004')) as m(duplicate, original)
+ where d.station_code = m.duplicate
+   and exists (select 1 from public.jps_stations s where s.station_code = m.original);
 
 commit;
 
