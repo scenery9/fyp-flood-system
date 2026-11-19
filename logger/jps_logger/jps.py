@@ -1,5 +1,6 @@
 """Reading the public JPS Selangor API (the same feed as infobanjirjps.selangor.gov.my).
-Melaka is read from its web pages in melaka.py and stored the same way.
+Melaka is read from its web pages in melaka.py, and both states can also be read
+from the national pages in publicinfobanjir.py; all are stored the same way.
 
 Every response only holds each station's LATEST value, so anything not logged
 when it is shown is lost. Times are Malaysia time (UTC+8) and are stored in UTC.
@@ -29,12 +30,18 @@ def get_json(path, session=None):
 
 
 def parse_time(text):
-    """'17/11/2026 14:45:00' (Malaysia time) -> '2026-11-17T06:45:00Z'. None if unreadable."""
-    try:
-        t = datetime.strptime(text.strip(), "%d/%m/%Y %H:%M:%S").replace(tzinfo=MYT)
-    except (AttributeError, ValueError):
+    """'17/11/2026 14:45:00' or '17/11/2026 14:45' (Malaysia time) -> '2026-11-17T06:45:00Z'.
+    None if unreadable."""
+    if not isinstance(text, str):
         return None
-    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    text = " ".join(text.split())
+    for fmt in ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M"):
+        try:
+            t = datetime.strptime(text, fmt).replace(tzinfo=MYT)
+        except ValueError:
+            continue
+        return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return None
 
 
 def _number(v):
@@ -104,7 +111,7 @@ def station_rows(wl_payloads, rf_payloads, wl_list, rf_list, now):
             "district": s.get("districtName"), "river_basin": None, "lat": None, "lon": None,
             "has_river_level": False, "has_rainfall": False, "wl_normal": None, "wl_alert": None,
             "wl_warning": None, "wl_danger": None, "updated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "state": "Selangor",
+            "state": "Selangor", "jps_wl_id": None, "jps_rf_id": None,
         })
         p = place.get(s.get("id"), {})
         for k in ("lat", "lon", "river_basin"):
@@ -118,11 +125,33 @@ def station_rows(wl_payloads, rf_payloads, wl_list, rf_list, now):
                 continue
             row = base(s)
             row["has_river_level"] = True
+            row["jps_wl_id"] = _national_id(s)
             for src, dst in (("wlth_normal", "wl_normal"), ("wlth_alert", "wl_alert"),
                              ("wlth_warning", "wl_warning"), ("wlth_danger", "wl_danger")):
                 row[dst] = _number(s.get(src))
     for payload in rf_payloads:
         for s in payload.get("stations") or []:
             if s.get("stationCode"):
-                base(s)["has_rainfall"] = True
+                row = base(s)
+                row["has_rainfall"] = True
+                row["jps_rf_id"] = _national_id(s)
     return list(stations.values())
+
+
+def _national_id(s):
+    """The station id that publicinfobanjir.water.gov.my uses (e.g. "3015432"),
+    which the Selangor feed gives as stationId. None when missing."""
+    v = s.get("stationId")
+    v = str(v).strip() if v is not None else ""
+    return v or None
+
+
+def id_map(payloads):
+    """{national station id: Selangor station code} from district payloads."""
+    out = {}
+    for payload in payloads:
+        for s in payload.get("stations") or []:
+            nid, code = _national_id(s), (s.get("stationCode") or "").strip()
+            if nid and code:
+                out[nid] = code
+    return out

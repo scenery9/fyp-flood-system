@@ -324,7 +324,27 @@ class AppController extends ChangeNotifier {
     return a.isActionable ? a.level! : RiskLevel.alert;
   }
 
-  StationForecast? forecastFor(String stationId) => forecast?.forecasts[stationId];
+  /// Rain to show with [s]: its own gauge, or the nearest gauge within 10 km
+  /// with a reading under 3 hours old. Null: no rain data now.
+  RainSource? rainFor(StationStatus s) => rainSourceFor(s, statuses, now: DateTime.now());
+
+  /// For the Home AI forecast card and its "Why" page only. With live data
+  /// this may be the labelled practice forecast (see PracticeForecastSource).
+  StationForecast? cardForecastFor(String stationId) => forecast?.forecasts[stationId];
+
+  /// Everywhere else (alerts, lists, map, station page). With live data a
+  /// practice forecast is left out: made-up numbers must not look like a
+  /// prediction for a real river outside the clearly labelled card.
+  StationForecast? forecastFor(String stationId) {
+    final f = cardForecastFor(stationId);
+    return f != null && f.isPracticeData && deps.liveData ? null : f;
+  }
+
+  Map<String, StationForecast> get _trustedForecasts {
+    final all = forecast?.forecasts ?? const <String, StationForecast>{};
+    if (!deps.liveData) return all;
+    return {for (final e in all.entries) if (!e.value.isPracticeData) e.key: e.value};
+  }
 
   /// Saved areas, the nearest station and stations within 10 km, at the
   /// "Notify me from" level or above (no setup needed).
@@ -332,7 +352,7 @@ class AppController extends ChangeNotifier {
         statuses: statuses,
         savedIds: {for (final a in areas) a.station.id},
         nearestId: nearest?.station.id,
-        forecasts: forecast?.forecasts ?? const {},
+        forecasts: _trustedForecasts,
         minLevel: settings.notificationThreshold,
         nearbyKm: locationIssue == null ? 10.0 : -1.0,
       );

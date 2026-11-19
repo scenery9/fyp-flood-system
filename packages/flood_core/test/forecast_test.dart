@@ -248,4 +248,28 @@ void main() {
       }
     });
   });
+
+  group('Remote forecast with practice fallback', () {
+    final practice = FakeSource(file([entry('A', 11.5, 11.6)], extra: {'is_practice_data': true}));
+    Future<String> via(ForecastSource primary) => FallbackForecastSource(primary, practice, clock: fixedClock).fetch();
+    final uri = Uri.parse('https://x.supabase.co/storage/v1/object/public/forecasts/forecast.json');
+    RemoteForecastSource remote(int status, String reply) =>
+        RemoteForecastSource(uri, (m, u, {headers = const {}, body}) async => HttpReply(status, reply));
+
+    test('a recent, valid real file is used', () async {
+      final real = file([entry('A', 11.5, 12.3)]);
+      expect(await via(FakeSource(real)), real);
+      expect(await via(remote(200, real)), real);
+    });
+    test('missing, damaged, old or future files fall back to practice', () async {
+      expect(await via(FakeSource('')..fail = true), practice.body);
+      expect(await via(FakeSource('not json')), practice.body);
+      expect(await via(FakeSource(file([], minAgo: 121))), practice.body);
+      expect(await via(FakeSource(file([], minAgo: -11))), practice.body);
+      expect(await via(remote(404, 'not found')), practice.body);
+    });
+    test('the remote source refuses anything but 2xx', () {
+      expect(remote(400, 'bucket not found').fetch(), throwsA(isA<StateError>()));
+    });
+  });
 }

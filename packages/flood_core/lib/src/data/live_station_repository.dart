@@ -84,6 +84,7 @@ class LiveStationRepository implements StationRepository {
       time: (hasLevel ? levelAt : rainAt)!.toUtc(),
       riverLevel: hasLevel ? level : null,
       rainfall: hasRain ? rain : null,
+      rainfallTime: hasRain ? rainAt.toUtc() : null,
     );
   }
 

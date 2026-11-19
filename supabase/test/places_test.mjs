@@ -15,7 +15,7 @@ await db.exec(`
   grant usage on schema public to service_role;
 `);
 for (const f of ['schema.sql', 'readings.sql', 'staff_districts.sql', 'alerts.sql', 'routing.sql',
-  'public_reports.sql', 'household_groups.sql', 'places.sql']) {
+  'public_reports.sql', 'household_groups.sql', 'places.sql', 'sources.sql']) {
   await db.exec(readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'));
 }
 
@@ -115,6 +115,20 @@ r = await as('authenticated', ALICE, `select public.nearest_district(2.37, 102.2
 check('a report in Melaka gets a Melaka district', r.rows?.[0]?.d === 'ALOR GAJAH', r);
 r = await as('anon', null, `select count(*)::int as n from public.districts where state = 'Melaka'`);
 check('the three Melaka districts are listed', r.rows?.[0]?.n === 3, r);
+
+// PL7 national station ids (sources.sql), for the second data source
+r = await as('service_role', null, `insert into public.jps_stations (station_code, name, state, jps_wl_id, jps_rf_id)
+  values ('BKLG0002L', 'TAMAN SRI MUDA', 'Selangor', '3015432', '3015084')
+  on conflict (station_code) do update set jps_wl_id = excluded.jps_wl_id, jps_rf_id = excluded.jps_rf_id`);
+check('the logger can store national station ids', !r.error, r);
+r = await as('service_role', null, `select station_code from public.jps_stations where jps_wl_id = '3015432'`);
+check('the logger can look a station up by national id', r.rows?.[0]?.station_code === 'BKLG0002L', r);
+try {
+  await db.exec(readFileSync(new URL('../sources.sql', import.meta.url), 'utf8'));
+  check('sources.sql can be run twice', true);
+} catch (e) {
+  check('sources.sql can be run twice', false, e.message);
+}
 
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);

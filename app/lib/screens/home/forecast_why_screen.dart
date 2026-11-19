@@ -16,7 +16,7 @@ class ForecastWhyScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final f = app.forecastFor(stationId);
+    final f = app.cardForecastFor(stationId);
     final s = app.statusOf(stationId);
     return SubPage(
       title: context.tr('Why the AI says this', 'Kenapa AI kata begini'),

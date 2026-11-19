@@ -1,9 +1,10 @@
 name: Log JPS Selangor and Melaka readings
 
 # Every 15 minutes, at minutes 7, 22, 37 and 52 (quieter than :00 on GitHub).
-# GitHub may start a run late when it is busy, and turns scheduled runs off after
-# 60 days without a commit to the repository: commit at least once every 60 days,
-# or re-enable the workflow in the Actions tab.
+# Supabase pg_cron starts it through workflow_dispatch (supabase/logger_schedule.sql),
+# because GitHub's own schedule is best-effort: on 19 Nov 2026 it ran only every
+# 5-8 hours. The schedule below stays as a backup. GitHub also turns scheduled runs
+# off after 60 days without a commit (workflow_dispatch keeps working).
 on:
   schedule:
     - cron: '7,22,37,52 * * * *'

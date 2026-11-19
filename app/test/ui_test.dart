@@ -168,7 +168,8 @@ void main() {
       await TestApp().start(tester);
       await reveal(tester, find.text('Expected to stay at Danger level for the next 3 hours'));
       expect(find.text('Likely between 19.90 m and 20.18 m'), findsOneWidget);
-      expect(find.text('Practice model: not real predictions yet'), findsOneWidget);
+      expect(find.text('Practice forecast'), findsOneWidget);
+      expect(find.text('Not real predictions yet'), findsOneWidget);
     });
 
     testWidgets('"Why does the AI say this?" lists the readings with their direction', (tester) async {

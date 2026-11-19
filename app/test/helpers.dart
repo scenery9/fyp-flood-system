@@ -127,6 +127,8 @@ class TestApp {
     bool locationAskedBefore = true,
     Map<String, String>? flags,
     Table<EvacuationPoint>? centres,
+    this.liveData = false,
+    ForecastSource? forecastSource,
   })  : flagsStore = InMemorySettingsStore(flags ??
             {
               if (pushAskedBefore) 'pushAsked': 'true',
@@ -152,7 +154,8 @@ class TestApp {
       progressStore: progressStore,
       contactStore: contactStore,
       centres: centres ?? SampleData.centres(),
-      forecastSource: SampleForecastSource(),
+      forecastSource: forecastSource ?? SampleForecastSource(),
+      liveData: liveData,
       lock: this.lock,
       phone: this.phone,
       opener: opener,
@@ -192,6 +195,7 @@ class TestApp {
   final heightStore = InMemorySettingsStore();
   late final HouseholdLockService lock;
   late final AppController controller;
+  final bool liveData;
 
   /// Starts the app on a phone-sized screen and waits until it has loaded.
   Future<void> start(WidgetTester tester) async {

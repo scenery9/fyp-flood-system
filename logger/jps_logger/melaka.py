@@ -6,9 +6,13 @@ the station name's link: loadMapPage(lat, lon, ...). Times are Malaysia time,
 like Selangor, and become the same rows as jps.py makes, so the database, the
 app and the archive treat both states the same way.
 
+Melaka is also on the national pages (publicinfobanjir.py), with the same
+station codes but no positions. collect.SOURCES decides which is read first;
+the other fills in when it fails.
+
 The page layout can change without notice. A row that does not look right is
 skipped (never guessed); if no rows can be read at all, collect.py reports it
-as a warning and Selangor is still logged.
+as a warning and the other source is tried.
 """
 import re
 from html.parser import HTMLParser
@@ -18,6 +22,8 @@ from . import jps
 BASE = "https://infobanjirjpsmelaka.water.gov.my"
 RIVER_PAGE = "WaterLevel/LatestData/All"
 RAIN_PAGE = "Rainfall/LatestData/All"
+RIVER_URL = f"{BASE}/{RIVER_PAGE}"
+RAIN_URL = f"{BASE}/{RAIN_PAGE}"
 STATE = "Melaka"
 _MAP = re.compile(r"loadMapPage\(\s*(-?[0-9.]+)\s*,\s*(-?[0-9.]+)")
 
@@ -141,8 +147,9 @@ def rainfall_rows(stations, now):
     return jps.rainfall_rows(payload, now)
 
 
-def station_rows(river, rain, now):
-    """Rows for jps_stations (same columns as jps.station_rows, state Melaka)."""
+def station_rows(river, rain, now, state=STATE):
+    """Rows for jps_stations (same columns as jps.station_rows). Also used for the
+    publicinfobanjir rows, which have the same keys."""
     rows = {}
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     for s in list(river) + list(rain):
@@ -150,7 +157,8 @@ def station_rows(river, rain, now):
             "station_code": s["code"], "name": s["name"], "district": s["district"],
             "river_basin": s.get("basin"), "lat": s["lat"], "lon": s["lon"],
             "has_river_level": False, "has_rainfall": False, "wl_normal": None, "wl_alert": None,
-            "wl_warning": None, "wl_danger": None, "updated_at": stamp, "state": STATE,
+            "wl_warning": None, "wl_danger": None, "updated_at": stamp, "state": state,
+            "jps_wl_id": None, "jps_rf_id": None,
         })
         if "level" in s:
             row["has_river_level"] = True

@@ -28,8 +28,13 @@ def selangor(path):
     raise AssertionError(path)
 
 
-def melaka_pages(path):
-    return page("melaka_wl.html") if path == melaka.RIVER_PAGE else page("melaka_rf.html")
+def melaka_pages(url):
+    """Only the Melaka site answers (publicinfobanjir is down), so Melaka falls back to it."""
+    if url == melaka.RIVER_URL:
+        return page("melaka_wl.html")
+    if url == melaka.RAIN_URL:
+        return page("melaka_rf.html")
+    raise ConnectionError(url)
 
 
 # LG5 Melaka pages
@@ -90,7 +95,8 @@ def test_run_stores_selangor_and_melaka_together():
     # every station row has the same keys, as one Supabase request needs
     assert len({tuple(sorted(r)) for r in tables["jps_stations"]}) == 1
     assert {"0290211WL", "BKLG0002L"} <= {r["station_code"] for r in tables["jps_river_levels"]}
-    assert "0 problems" in msgs[-1]
+    assert "Melaka river level: melaka-site (2)" in msgs  # publicinfobanjir down, Melaka site used
+    assert "Melaka river level page (publicinfobanjir): ConnectionError" in "".join(msgs)
 
 
 def test_blocked_melaka_site_warns_and_selangor_is_still_stored():

@@ -1,14 +1,59 @@
 import 'dart:convert';
 
+import '../data/supabase_api.dart' show HttpSend;
 import '../errors.dart';
 import '../models/forecast.dart';
 import '../models/risk_level.dart';
 import '../models/station.dart';
 import '../models/station_status.dart';
 
-/// Where forecast.json comes from (a file URL on GitHub in the real app).
+/// Where forecast.json comes from.
 abstract class ForecastSource {
   Future<String> fetch();
+}
+
+/// Downloads forecast.json from a URL (the public `forecasts` bucket in
+/// Supabase Storage). Anything but a 2xx reply is an error.
+class RemoteForecastSource implements ForecastSource {
+  RemoteForecastSource(this.uri, this.send);
+  final Uri uri;
+  final HttpSend send;
+
+  @override
+  Future<String> fetch() async {
+    final r = await send('GET', uri);
+    if (!r.ok) throw StateError('Forecast download failed: HTTP ${r.status}');
+    return r.body;
+  }
+}
+
+/// Uses [primary] (the real model's file) when it is there, readable and
+/// recent; otherwise [fallback] (the practice forecast). Chosen per file, so
+/// real and practice forecasts are never mixed. Once the model job starts
+/// uploading, the app switches over on its next refresh with no new release.
+class FallbackForecastSource implements ForecastSource {
+  FallbackForecastSource(this.primary, this.fallback,
+      {DateTime Function()? clock, this.maxAge = const Duration(hours: 2)})
+      : _clock = clock ?? DateTime.now;
+  final ForecastSource primary;
+  final ForecastSource fallback;
+  final DateTime Function() _clock;
+
+  /// Same limit as [ForecastService.maxAge]: an older real file is not used.
+  final Duration maxAge;
+
+  @override
+  Future<String> fetch() async {
+    try {
+      final body = await primary.fetch();
+      final file = parseForecast(body);
+      final age = _clock().difference(file.generatedAt);
+      if (age <= maxAge && age >= const Duration(minutes: -10)) return body;
+    } catch (_) {
+      // Not there yet, unreadable or offline: use the fallback.
+    }
+    return fallback.fetch();
+  }
 }
 
 /// Reads forecast.json (schema 1). Throws [ForecastFormatException] if it is wrong.

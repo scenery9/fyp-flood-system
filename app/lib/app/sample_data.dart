@@ -27,6 +27,60 @@ class SampleData {
   }
 }
 
+/// PRACTICE forecast for the live JPS stations, used until the real model's
+/// forecast.json is published (see [FallbackForecastSource]). It is a simple
+/// rule, not the AI: rain in the last hour pushes the river up, and a river
+/// above its normal level slowly drains back. Every file is marked
+/// `is_practice_data`, so the app labels it and keeps it out of alerts.
+class PracticeForecastSource implements ForecastSource {
+  PracticeForecastSource(this.statuses, {DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+
+  /// The statuses just loaded (read on each fetch, so always current).
+  final List<StationStatus> Function() statuses;
+  final DateTime Function() _clock;
+
+  static const horizonHours = 3;
+  static const bandM = 0.15;
+
+  @override
+  Future<String> fetch() async {
+    final now = _clock().toUtc();
+    final stations = <Map<String, Object>>[];
+    for (final s in statuses()) {
+      final r = s.reading;
+      final t = s.station.thresholds;
+      final level = r?.riverLevelM;
+      if (r == null || t == null || level == null || s.isStale) continue;
+      final rain = r.rainfallMmPerHr ?? 0;
+      final above = level - t.normal;
+      final rainPart = (0.012 * rain).clamp(0.0, 0.5);
+      final drainPart = -(0.05 * above).clamp(0.0, 0.15);
+      final pred = level + rainPart + drainPart;
+      double round(double v) => (v * 1000).roundToDouble() / 1000;
+      stations.add({
+        'station_id': s.station.id,
+        'based_on': r.time.toUtc().toIso8601String(),
+        'current_level_m': round(level),
+        'predicted_level_m': round(pred),
+        'low_m': round(pred - bandM),
+        'high_m': round(pred + bandM),
+        'factors': [
+          {'feature': 'rain_sum_1h', 'value': rain, 'impact_m': round(rainPart)},
+          {'feature': 'level_above_normal', 'value': round(above), 'impact_m': round(drainPart)},
+        ],
+      });
+    }
+    return jsonEncode({
+      'schema': 1,
+      'generated_at': now.toIso8601String(),
+      'horizon_hours': horizonHours,
+      'model': {'name': 'practice-rule'},
+      'is_practice_data': true,
+      'stations': stations,
+    });
+  }
+}
+
 /// Serves a forecast.json made relative to "now", so it is never out of date.
 class SampleForecastSource implements ForecastSource {
   SampleForecastSource({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;

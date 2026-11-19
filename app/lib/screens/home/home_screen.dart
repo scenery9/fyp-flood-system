@@ -119,44 +119,20 @@ class AreaCarousel extends StatelessWidget {
             if (v < -200) app.selectArea(i + 1);
             if (v > 200) app.selectArea(i - 1);
           },
-          child: Stack(
-            children: [
-              AnimatedSwitcher(
-                duration: MediaQuery.of(context).disableAnimations ? Duration.zero : const Duration(milliseconds: 250),
-                child: AreaCard(key: ValueKey(areas[i].station.id), status: areas[i]),
-              ),
-              if (i > 0)
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _Arrow(
-                      icon: Icons.chevron_left,
-                      label: context.tr('Previous area', 'Kawasan sebelumnya'),
-                      onTap: () => app.selectArea(i - 1),
-                    ),
-                  ),
-                ),
-              if (i < areas.length - 1)
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: Center(
-                    child: _Arrow(
-                      icon: Icons.chevron_right,
-                      label: context.tr('Next area', 'Kawasan seterusnya'),
-                      onTap: () => app.selectArea(i + 1),
-                    ),
-                  ),
-                ),
-            ],
+          child: AnimatedSwitcher(
+            duration: MediaQuery.of(context).disableAnimations ? Duration.zero : const Duration(milliseconds: 250),
+            child: AreaCard(key: ValueKey(areas[i].station.id), status: areas[i]),
           ),
         ),
+        // Arrows sit beside the dots, under the card, so the card's text lines
+        // up with the other Home cards instead of making room for them.
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            if (i > 0)
+              _Arrow(icon: Icons.chevron_left, label: context.tr('Previous area', 'Kawasan sebelumnya'), onTap: () => app.selectArea(i - 1))
+            else
+              const SizedBox(width: _Arrow.width),
             for (var k = 0; k < areas.length; k++)
               Semantics(
                 // Own node, so screen readers announce each dot separately.
@@ -184,6 +160,10 @@ class AreaCarousel extends StatelessWidget {
                   ),
                 ),
               ),
+            if (i < areas.length - 1)
+              _Arrow(icon: Icons.chevron_right, label: context.tr('Next area', 'Kawasan seterusnya'), onTap: () => app.selectArea(i + 1))
+            else
+              const SizedBox(width: _Arrow.width),
           ],
         ),
       ],
@@ -193,6 +173,9 @@ class AreaCarousel extends StatelessWidget {
 
 class _Arrow extends StatelessWidget {
   const _Arrow({required this.icon, required this.label, required this.onTap});
+
+  /// A full 48 dp touch target.
+  static const double width = 48;
   final IconData icon;
   final String label;
   final VoidCallback onTap;
@@ -206,10 +189,20 @@ class _Arrow extends StatelessWidget {
         excludeSemantics: true,
         child: InkWell(
           onTap: onTap,
-          child: SizedBox(width: 32, height: 64, child: Icon(icon, color: AppColors.chevron, size: 28)),
+          customBorder: const CircleBorder(),
+          child: SizedBox(width: width, height: 48, child: Icon(icon, color: AppColors.chevron, size: 28)),
         ),
       );
 }
+
+/// JPS 1-hour rain band in words (null or 0 mm: no rain).
+String rainWord(BuildContext context, RainIntensity? i) => switch (i) {
+      RainIntensity.light => context.tr('Light rain', 'Hujan renyai', '小雨'),
+      RainIntensity.moderate => context.tr('Moderate rain', 'Hujan sederhana', '中雨'),
+      RainIntensity.heavy => context.tr('Heavy rain', 'Hujan lebat', '大雨'),
+      RainIntensity.veryHeavy => context.tr('Very heavy rain', 'Hujan sangat lebat', '暴雨'),
+      _ => context.tr('No rain now', 'Tiada hujan sekarang', '目前无雨'),
+    };
 
 /// One area's status: the risk word, the river reading and when it was read.
 class AreaCard extends StatelessWidget {
@@ -246,13 +239,7 @@ class AreaCard extends StatelessWidget {
     final word = known
         ? context.levelName(s.level)
         : rainOnly
-            ? switch (s.rainIntensity) {
-                RainIntensity.light => context.tr('Light rain', 'Hujan renyai', '小雨'),
-                RainIntensity.moderate => context.tr('Moderate rain', 'Hujan sederhana', '中雨'),
-                RainIntensity.heavy => context.tr('Heavy rain', 'Hujan lebat', '大雨'),
-                RainIntensity.veryHeavy => context.tr('Very heavy rain', 'Hujan sangat lebat', '暴雨'),
-                _ => context.tr('No rain now', 'Tiada hujan sekarang', '目前无雨'),
-              }
+            ? rainWord(context, s.rainIntensity)
             : context.tr('No recent data', 'Tiada data terkini');
     final other = known
         ? (app.language == AppLanguage.ms ? s.level!.labelEn : s.level!.labelBm)
@@ -262,21 +249,39 @@ class AreaCard extends StatelessWidget {
     final wordColor = !rainOnly ? style.color : (heavyRain ? RiskStyle.of(RiskLevel.warning).color : c.primary);
     final icon = rainOnly ? Icons.water_drop : style.icon;
 
-    final value = s.riverLevel != null
-        ? metres(s.riverLevel!)
-        : (s.rainfall != null ? '${s.rainfall!.toStringAsFixed(1)} mm/h' : '—');
+    // The big reading says what it is: river water (or rain, for a rain gauge).
+    final valueLabel = rainOnly ? context.tr('Rain: ', 'Hujan: ', '雨量：') : context.tr('River water: ', 'Air sungai: ', '河水位：');
+    final value = rainOnly ? '${s.rainfall!.toStringAsFixed(1)} mm/h' : (s.riverLevel != null ? metres(s.riverLevel!) : '—');
+
+    // Rain: this station's own gauge, else the nearest one reporting (named, with distance).
+    final rain = app.rainFor(s);
+    final rainHeavy = rain != null && rain.intensity.index >= RainIntensity.heavy.index;
+    final rainColor = rain == null ? c.textMuted : (rainHeavy ? RiskStyle.of(RiskLevel.warning).color : c.primary);
+    final rainLine = rain == null
+        ? context.tr('Rain: no rain data now', 'Hujan: tiada data hujan sekarang', '雨量：目前无雨量数据')
+        : context.tr('Rain: ${rainWord(context, rain.intensity)} · ${rain.mmPerHr.toStringAsFixed(1)} mm/h',
+            'Hujan: ${rainWord(context, rain.intensity)} · ${rain.mmPerHr.toStringAsFixed(1)} mm/j',
+            '雨量：${rainWord(context, rain.intensity)} · ${rain.mmPerHr.toStringAsFixed(1)} 毫米/时');
+    final rainAge = rain != null && rain.age > const Duration(minutes: 75) ? ' · ${formatAge(context, rain.age)}' : '';
+    final rainWhere = rain == null
+        ? context.tr('No rain gauge reporting within 10 km', 'Tiada tolok hujan melapor dalam 10 km', '10 公里内无雨量站报告')
+        : rain.isOwnGauge
+            ? context.tr('Rain gauge at this station$rainAge', 'Tolok hujan di stesen ini$rainAge', '本站雨量计$rainAge')
+            : context.tr('Nearest rain gauge (${rain.distanceKm!.toStringAsFixed(1)} km): ${rain.gauge.station.name}$rainAge',
+                'Tolok hujan terdekat (${rain.distanceKm!.toStringAsFixed(1)} km): ${rain.gauge.station.name}$rainAge',
+                '最近雨量站（${rain.distanceKm!.toStringAsFixed(1)} 公里）：${rain.gauge.station.name}$rainAge');
     // Every line has a fixed slot and is one line long, so all saved-area
     // cards are the same height and the carousel does not jump on change.
     Widget oneLine(String text, TextStyle style) => Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
     Widget fitLine(String text, TextStyle style) =>
         FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(text, style: style, maxLines: 1));
 
+    // Same padding (16) and small top label as the other Home cards, so the
+    // text lines up with the AI forecast and checklist cards below.
     return AppCard(
-      // Less padding on the right so Change area sits closer to the edge.
-      padding: const EdgeInsets.fromLTRB(28, 16, 14, 16),
       child: Semantics(
         container: true,
-        label: '${s.station.name}. $word.',
+        label: '${s.station.name}. $word. $rainLine. $rainWhere.',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -287,7 +292,7 @@ class AreaCard extends StatelessWidget {
                         nearestMode
                             ? context.tr('Nearest to you$distance', 'Paling dekat dengan anda$distance', '离您最近$distance')
                             : context.tr('Saved area$distance', 'Kawasan disimpan$distance', '已保存地区$distance'),
-                        context.text.bodyMedium!)),
+                        context.text.labelMedium!)),
                 const SizedBox(width: 8),
                 if (nearestMode)
                   FilledButton.tonal(
@@ -317,9 +322,8 @@ class AreaCard extends StatelessWidget {
                 ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.only(right: 14),
-              child: Column(
+            const SizedBox(height: 4),
+            Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   fitLine(s.station.name, context.text.titleMedium!),
@@ -332,10 +336,29 @@ class AreaCard extends StatelessWidget {
                     Expanded(child: oneLine(other, context.text.titleLarge!.copyWith(color: c.textMuted, fontWeight: FontWeight.w400))),
                   ]),
                   const SizedBox(height: 20),
-                  fitLine(value, context.text.headlineLarge!.copyWith(fontWeight: FontWeight.w600, fontFeatures: AppText.tabular)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(valueLabel, style: context.text.titleMedium!.copyWith(color: c.textMuted, fontWeight: FontWeight.w400)),
+                      Flexible(child: fitLine(value, context.text.headlineLarge!.copyWith(fontWeight: FontWeight.w600, fontFeatures: AppText.tabular))),
+                    ],
+                  ),
                   // Kept even when empty so every card has the same height.
                   oneLine(nextLine ?? ' ', context.text.bodyLarge!.copyWith(color: c.textMuted, fontFeatures: AppText.tabular)),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Icon(Icons.water_drop, color: rainColor, size: 20),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: oneLine(rainLine, context.text.bodyLarge!.copyWith(
+                            color: rain == null ? c.textMuted : null, fontWeight: rainHeavy ? FontWeight.w600 : null))),
+                  ]),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 26),
+                    child: oneLine(rainWhere, context.text.bodyMedium!.copyWith(color: c.textMuted)),
+                  ),
+                  const SizedBox(height: 8),
                   oneLine(
                     AppScope.of(context).deps.liveData
                         ? context.tr('Updated ${formatAge(context, s.age)} · JPS data', 'Dikemas kini ${formatAge(context, s.age)} · data JPS', '更新于${formatAge(context, s.age)} · JPS数据')
@@ -343,7 +366,6 @@ class AreaCard extends StatelessWidget {
                     context.text.bodyMedium!,
                   ),
                 ],
-              ),
             ),
           ],
         ),
@@ -360,7 +382,7 @@ class ForecastCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final f = app.forecastFor(area.station.id);
+    final f = app.cardForecastFor(area.station.id);
     final short = area.station.name.contains(' di ') ? area.station.name.split(' di ').last : area.station.name;
     return AppCard(
       child: Column(
@@ -394,8 +416,16 @@ class ForecastCard extends StatelessWidget {
             if (f.isPracticeData)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: Text(context.tr('Practice model: not real predictions yet', 'Model latihan: belum ramalan sebenar'),
-                    style: context.text.labelSmall),
+                child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  TagBadge(
+                    key: const ValueKey('practice-forecast'),
+                    text: context.tr('Practice forecast', 'Ramalan latihan', '练习预测'),
+                    color: const Color(0xFF7A4A00),
+                    tint: const Color(0xFFFFF1D6),
+                    icon: Icons.science_outlined,
+                  ),
+                  Text(context.tr('Not real predictions yet', 'Belum ramalan sebenar', '尚非真实预测'), style: context.text.bodyMedium),
+                ]),
               ),
             const SizedBox(height: 8),
             Divider(height: 1, color: context.colors.divider),

@@ -50,7 +50,13 @@ Future<void> main() async {
     // Relief centres from places/centres.csv (uploaded to Supabase); the last
     // list is kept on the phone for use without internet. Sample ones otherwise.
     centres: api == null ? SampleData.centres() : LiveCentreTable(api, store: PhoneSettingsStore('centres_live')),
-    forecastSource: SampleForecastSource(),
+    // Live: the real model's forecast.json from Supabase Storage once it is
+    // published; until then a labelled practice forecast for the live stations.
+    forecastSource: !live
+        ? SampleForecastSource()
+        : FallbackForecastSource(
+            RemoteForecastSource(Uri.parse('${supabaseConfig.url}/storage/v1/object/public/forecasts/forecast.json'), deviceHttp),
+            PracticeForecastSource(() => controller.statuses)),
     // Created once per app start, so an unlock lasts until the app is closed.
     lock: HouseholdLockService(PhoneSettingsStore('household_lock')),
     phone: DevicePhoneLockChecker(),

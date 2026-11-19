@@ -32,6 +32,7 @@ Future<Table<EvacuationPoint>> centresWithUnchecked() async {
 }
 
 void main() {
+  tp98();
   group('TP91 Centres from the list', () {
     testWidgets('an unchecked centre is listed, but never suggested and gets no route', (tester) async {
       final app = TestApp(centres: await centresWithUnchecked());
@@ -164,6 +165,33 @@ void main() {
       expect(inCard('Rain gauge only, no river reading'), findsOneWidget);
       expect(inCard('65.0 mm/h'), findsOneWidget);
       expect(inCard('No recent data'), findsNothing);
+    });
+  });
+}
+
+// TP98: river water and rain on the Home area card.
+void tp98() {
+  group('TP98 River water and rain on the area card', () {
+    Finder inCard(String text) => find.descendant(of: find.byType(AreaCard), matching: find.text(text));
+
+    testWidgets('the river reading is labelled, with the station\'s own rain band', (tester) async {
+      await TestApp(followed: const ['JHR-AWAT']).start(tester); // 19.97 m, 12.0 mm/h
+      expect(inCard('River water: '), findsOneWidget);
+      expect(inCard('19.97 m'), findsOneWidget);
+      expect(inCard('Rain: Moderate rain · 12.0 mm/h'), findsOneWidget);
+      expect(inCard('Rain gauge at this station'), findsOneWidget);
+    });
+
+    testWidgets('0 mm is "No rain now"', (tester) async {
+      await TestApp(followed: const ['SGR-KAJANG']).start(tester);
+      expect(inCard('Rain: No rain now · 0.0 mm/h'), findsOneWidget);
+    });
+
+    testWidgets('arrows sit under the card and still change area', (tester) async {
+      await TestApp().start(tester);
+      expect(find.descendant(of: find.byType(AreaCard), matching: find.bySemanticsLabel('Next area')), findsNothing);
+      await tapIt(tester, find.bySemanticsLabel('Next area'));
+      expect(inCard('Sg. Muar di Buloh Kasap'), findsOneWidget);
     });
   });
 }

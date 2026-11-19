@@ -62,6 +62,7 @@ export 'src/services/push_alert_service.dart';
 
 // Round 7: easier alerts, offline route guide, public reports and headcount
 export 'src/services/alert_guide.dart';
+export 'src/services/rain_source.dart';
 export 'src/services/public_reports_service.dart';
 export 'src/services/route_guide.dart';
 export 'src/services/location_consent.dart';
