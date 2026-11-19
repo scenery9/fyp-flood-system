@@ -129,6 +129,7 @@ class TestApp {
     Table<EvacuationPoint>? centres,
     this.liveData = false,
     ForecastSource? forecastSource,
+    StationRepository? repository,
   })  : flagsStore = InMemorySettingsStore(flags ??
             {
               if (pushAskedBefore) 'pushAsked': 'true',
@@ -147,7 +148,7 @@ class TestApp {
         location = FakeLocation(location ?? LocationFix(SampleData.userLocation)) {
     this.lock = lock ?? HouseholdLockService(InMemorySettingsStore());
     controller = AppController(AppDeps(
-      repository: SampleStationRepository(),
+      repository: repository ?? SampleStationRepository(),
       followedStore: followedStore,
       settingsStore: settingsStore,
       profileStore: profileStore,

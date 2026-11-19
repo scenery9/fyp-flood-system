@@ -60,7 +60,8 @@ class HomeScreen extends StatelessWidget {
           ),
           if (area != null) ...[
             const SizedBox(height: kGap),
-            Padding(padding: const EdgeInsets.symmetric(horizontal: kMargin), child: ForecastCard(area: area)),
+            // The forecast is for the river shown on the area card (a rain gauge borrows a nearby river gauge).
+            Padding(padding: const EdgeInsets.symmetric(horizontal: kMargin), child: ForecastCard(area: app.riverStatusFor(area))),
             const SizedBox(height: kGap),
             const Padding(padding: EdgeInsets.symmetric(horizontal: kMargin), child: ChecklistSummaryCard()),
           ],
@@ -217,19 +218,24 @@ class AreaCard extends StatelessWidget {
     final app = AppScope.of(context);
     final s = status;
     final c = context.colors;
-    final known = s.level != null && !s.isStale;
-    final style = RiskStyle.of(known ? s.level : null);
-    final t = s.station.thresholds;
+    // River: this station's own gauge, else the nearest river gauge reporting
+    // (a rain gauge such as Kg. Sg. Putat RF has no river level of its own).
+    final river = app.riverFor(s);
+    final g = river?.gauge ?? s;
+    final borrowed = river != null && !river.isOwnGauge;
+    final known = g.level != null && !g.isStale;
+    final style = RiskStyle.of(known ? g.level : null);
+    final t = g.station.thresholds;
     String? nextLine;
-    if (t != null && s.targetLevel != null && s.level != RiskLevel.danger) {
-      final v = switch (s.targetLevel!) {
+    if (t != null && g.targetLevel != null && g.level != RiskLevel.danger) {
+      final v = switch (g.targetLevel!) {
         RiskLevel.normal => t.normal,
         RiskLevel.alert => t.alert,
         RiskLevel.warning => t.warning,
         RiskLevel.danger => t.danger,
       };
-      nextLine = context.tr('${context.levelName(s.targetLevel)} from ${metres(v)}', '${context.levelName(s.targetLevel)} dari ${metres(v)}', '${metres(v)} 起为${context.levelName(s.targetLevel)}');
-    } else if (t != null && s.level == RiskLevel.danger) {
+      nextLine = context.tr('${context.levelName(g.targetLevel)} from ${metres(v)}', '${context.levelName(g.targetLevel)} dari ${metres(v)}', '${metres(v)} 起为${context.levelName(g.targetLevel)}');
+    } else if (t != null && g.level == RiskLevel.danger) {
       nextLine = context.tr('Danger from ${metres(t.danger)}', 'Bahaya dari ${metres(t.danger)}', '${metres(t.danger)} 起为危险');
     }
     final distance = s.distanceKm == null ? '' : ' · ${s.distanceKm!.toStringAsFixed(1)} km';
@@ -237,12 +243,16 @@ class AreaCard extends StatelessWidget {
     final rainOnly = !known && t == null && s.riverLevel == null && s.rainfall != null && !s.isStale;
     final heavyRain = rainOnly && (s.rainIntensity?.index ?? 0) >= RainIntensity.heavy.index;
     final word = known
-        ? context.levelName(s.level)
+        ? context.levelName(g.level)
         : rainOnly
             ? rainWord(context, s.rainIntensity)
             : context.tr('No recent data', 'Tiada data terkini');
-    final other = known
-        ? (app.language == AppLanguage.ms ? s.level!.labelEn : s.level!.labelBm)
+    final other = borrowed
+        ? context.tr('River gauge ${river.distanceKm!.toStringAsFixed(1)} km: ${g.station.name}',
+            'Tolok sungai ${river.distanceKm!.toStringAsFixed(1)} km: ${g.station.name}',
+            '河水位站（${river.distanceKm!.toStringAsFixed(1)} 公里）：${g.station.name}')
+        : known
+        ? (app.language == AppLanguage.ms ? g.level!.labelEn : g.level!.labelBm)
         : rainOnly
             ? context.tr('Rain gauge only, no river reading', 'Tolok hujan sahaja, tiada bacaan sungai', '仅雨量站，无河水位读数')
             : (s.isStale ? context.tr('Last reading is too old to use', 'Bacaan terakhir terlalu lama') : context.tr('No river reading', 'Tiada bacaan sungai'));
@@ -251,7 +261,9 @@ class AreaCard extends StatelessWidget {
 
     // The big reading says what it is: river water (or rain, for a rain gauge).
     final valueLabel = rainOnly ? context.tr('Rain: ', 'Hujan: ', '雨量：') : context.tr('River water: ', 'Air sungai: ', '河水位：');
-    final value = rainOnly ? '${s.rainfall!.toStringAsFixed(1)} mm/h' : (s.riverLevel != null ? metres(s.riverLevel!) : '—');
+    final value = rainOnly ? '${s.rainfall!.toStringAsFixed(1)} mm/h' : (g.riverLevel != null ? metres(g.riverLevel!) : '—');
+    void openDetails() =>
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StationDetailScreen(stationId: g.station.id)));
 
     // Rain: this station's own gauge, else the nearest one reporting (named, with distance).
     final rain = app.rainFor(s);
@@ -278,10 +290,15 @@ class AreaCard extends StatelessWidget {
 
     // Same padding (16) and small top label as the other Home cards, so the
     // text lines up with the AI forecast and checklist cards below.
+    // Tap anywhere on the card for the full station details (like the high-risk list).
     return AppCard(
+      key: ValueKey('area-card-${s.station.id}'),
+      onTap: openDetails,
       child: Semantics(
         container: true,
-        label: '${s.station.name}. $word. $rainLine. $rainWhere.',
+        button: true,
+        hint: context.tr('Open station details', 'Buka butiran stesen', '打开测站详情'),
+        label: '${s.station.name}. $word. ${borrowed ? '$other. ' : ''}$rainLine. $rainWhere.',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -359,12 +376,18 @@ class AreaCard extends StatelessWidget {
                     child: oneLine(rainWhere, context.text.bodyMedium!.copyWith(color: c.textMuted)),
                   ),
                   const SizedBox(height: 8),
-                  oneLine(
-                    AppScope.of(context).deps.liveData
-                        ? context.tr('Updated ${formatAge(context, s.age)} · JPS data', 'Dikemas kini ${formatAge(context, s.age)} · data JPS', '更新于${formatAge(context, s.age)} · JPS数据')
-                        : context.tr('Updated ${formatAge(context, s.age)} · sample data', 'Dikemas kini ${formatAge(context, s.age)} · data contoh', '更新于${formatAge(context, s.age)} · 示例数据'),
-                    context.text.bodyMedium!,
-                  ),
+                  Row(children: [
+                    Expanded(
+                      child: oneLine(
+                        AppScope.of(context).deps.liveData
+                            ? context.tr('Updated ${formatAge(context, g.age)} · JPS data', 'Dikemas kini ${formatAge(context, g.age)} · data JPS', '更新于${formatAge(context, g.age)} · JPS数据')
+                            : context.tr('Updated ${formatAge(context, g.age)} · sample data', 'Dikemas kini ${formatAge(context, g.age)} · data contoh', '更新于${formatAge(context, g.age)} · 示例数据'),
+                        context.text.bodyMedium!,
+                      ),
+                    ),
+                    Text(context.tr('Details', 'Butiran', '详情'), style: context.text.bodyMedium!.copyWith(color: c.primary)),
+                    const Chevron(),
+                  ]),
                 ],
             ),
           ],

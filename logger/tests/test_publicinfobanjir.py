@@ -116,18 +116,37 @@ def test_selangor_station_rows_keep_the_national_ids():
 
 
 # LG7 switching sources
-def test_melaka_reads_publicinfobanjir_first_without_overwriting_positions():
+def test_melaka_reads_the_site_first_and_publicinfobanjir_adds_its_extra_stations():
     store, msgs, fp = FakeStore(), [], pages()
     assert collect.run(selangor(), store, NOW, msgs.append, fetch_page=fp) == 0
-    assert melaka.RIVER_URL not in fp.asked and melaka.RAIN_URL not in fp.asked  # not needed
+    assert fp.asked.index(melaka.RIVER_URL) < fp.asked.index(pib.river_url("Melaka"))  # both, site first
     assert pib.river_url("Selangor") not in fp.asked  # Selangor feed was complete
-    melaka_rows = [r for r in store.rows("jps_stations") if r["state"] == "Melaka"]
-    assert {r["station_code"] for r in melaka_rows} == {"0290211WL", "0300061WL", "0290211RF", "0270601RF"}
-    assert all("lat" not in r and "lon" not in r for r in melaka_rows)  # stored positions stay
-    levels = {r["station_code"]: r for r in store.rows("jps_river_levels")}
-    assert levels["0290211WL"]["level_m"] == 12.46
-    assert "Melaka river level: publicinfobanjir (2)" in msgs
+    rows = {r["station_code"]: r for r in store.rows("jps_stations") if r["state"] == "Melaka"}
+    assert rows["0290211WL"]["lat"] == 2.37349  # the site's station, with its position
+    assert "lat" not in rows["0300061WL"]  # only on publicinfobanjir: added, stored position kept
+    levels = {(r["station_code"], r["observed_at"]): r["level_m"] for r in store.rows("jps_river_levels")}
+    assert levels[("0290211WL", "2026-11-17T07:00:00Z")] == 12.24  # same station and time: the site wins
+    assert levels[("0300061WL", "2026-11-17T07:00:00Z")] == 1.54
+    assert "Melaka river level: melaka-site (2) + publicinfobanjir (2)" in msgs
     assert "0 problems" in msgs[-1]
+
+
+def test_a_renamed_melaka_station_keeps_the_melaka_site_code():
+    renamed = page("pib_mlk_wl.html").replace("0300061WL", "0290161WL")  # = 2322415 on the Melaka site
+
+    def fp(url):
+        return renamed if url == pib.river_url("Melaka") else pages()(url)
+    store = FakeStore()
+    collect.run(selangor(), store, NOW, lambda m: None, fetch_page=fp)
+    codes = {r["station_code"] for r in store.rows("jps_river_levels")}
+    assert "2322415" in codes and "0290161WL" not in codes
+    # no duplicate station row is made for it
+    assert not [r for r in store.rows("jps_stations") if r["station_code"] in ("0290161WL", "2322415")]
+
+
+def test_renamed_codes_point_at_melaka_codes():
+    assert set(collect.MELAKA_CODES) == {"0270231WL", "0290161WL", "0290221WL", "0290301RF"}
+    assert len(set(collect.MELAKA_CODES.values())) == 4
 
 
 def test_melaka_site_fills_in_when_publicinfobanjir_fails():
@@ -178,10 +197,9 @@ def test_unreadable_stored_ids_is_a_warning():
 
 def test_sources_can_be_swapped():
     fp = pages()
-    msgs = []
-    collect.run(selangor(), FakeStore(), NOW, msgs.append, fetch_page=fp,
-                sources={"Melaka": ("melaka-site", "publicinfobanjir")})
-    assert melaka.RIVER_URL in fp.asked and pib.river_url("Melaka") not in fp.asked
+    collect.run(selangor(), FakeStore(), NOW, lambda m: None, fetch_page=fp,
+                sources={"Selangor": ("publicinfobanjir", "selangor-api")})
+    assert fp.asked[0] == pib.river_url("Selangor")
 
 
 def test_station_rows_sent_without_id_columns_before_the_sql_is_run():

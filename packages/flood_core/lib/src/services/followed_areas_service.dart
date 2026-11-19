@@ -43,6 +43,15 @@ class FollowedAreasService {
     return updated;
   }
 
+  /// Saves the areas in the order the user arranged them. [ordered] must hold
+  /// exactly the followed ids; anything else is ignored (returns the list unchanged).
+  Future<List<String>> reorder(List<String> ordered) async {
+    final current = await list();
+    if (ordered.length != current.length || !current.every(ordered.contains)) return current;
+    await store.save([...ordered]);
+    return [...ordered];
+  }
+
   /// Star button: returns true if the station is followed afterwards.
   Future<bool> toggle(String stationId) async {
     if (await isFollowed(stationId)) {

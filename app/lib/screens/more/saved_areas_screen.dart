@@ -19,24 +19,70 @@ class SavedAreasScreen extends StatelessWidget {
       children: [
         NoteText(context.tr('Tap an area to show it on Home. You can save up to ${FollowedAreasService.maxAreas}.',
             'Ketik kawasan untuk dipaparkan di Utama. Anda boleh simpan sehingga ${FollowedAreasService.maxAreas}.', '点按地区即可在首页显示。最多可保存 ${FollowedAreasService.maxAreas} 个。')),
+        if (areas.length > 1)
+          NoteText(app.areasArranged
+              ? context.tr('Home shows them in your order, top one first. Drag an area by its handle (or press and hold it) to move it.',
+                  'Utama memaparkannya mengikut susunan anda, yang teratas dahulu. Seret kawasan pada pemegangnya (atau tekan lama) untuk mengalihnya.',
+                  '首页按您的顺序显示，最上面的在最前。拖动地区的把手（或长按）即可移动。')
+              : context.tr('Home shows the area nearest to you first. Drag an area by its handle (or press and hold it) to choose your own order.',
+                  'Utama memaparkan kawasan paling dekat dengan anda dahulu. Seret kawasan pada pemegangnya (atau tekan lama) untuk memilih susunan sendiri.',
+                  '首页先显示离您最近的地区。拖动地区的把手（或长按）可自定顺序。')),
         const SizedBox(height: 12),
         if (areas.isEmpty)
           NoteText(context.tr('No saved areas yet.', 'Tiada kawasan disimpan.'))
         else
-          GroupCard(children: [
-            for (var i = 0; i < areas.length; i++)
-              _AreaRow(
-                status: areas[i],
-                selected: i == app.areaIndex,
-                last: i == areas.length - 1,
-                onTap: () {
-                  app.selectArea(i);
-                  app.selectTab(AppTab.home);
-                  Navigator.of(context).popUntil((r) => r.isFirst);
-                },
-                onRemove: () => app.unfollow(areas[i].station.id),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: kMargin),
+            child: AppCard(
+              padding: EdgeInsets.zero,
+              // Drag a row to arrange the areas, like a deck of cards. Screen
+              // readers get "move up / move down" actions from the list itself.
+              child: ReorderableListView.builder(
+                key: const ValueKey('saved-areas-list'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                buildDefaultDragHandles: false,
+                itemCount: areas.length,
+                proxyDecorator: (child, _, animation) => AnimatedBuilder(
+                  animation: animation,
+                  builder: (context, child) => Material(
+                    elevation: 6 * animation.value,
+                    color: context.colors.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    child: child,
+                  ),
+                  child: child,
+                ),
+                onReorderItem: (from, to) => app.reorderArea(from, to),
+                itemBuilder: (context, i) => ReorderableDelayedDragStartListener(
+                  key: ValueKey('area-row-${areas[i].station.id}'),
+                  index: i,
+                  child: _AreaRow(
+                    status: areas[i],
+                    index: i,
+                    selected: i == app.areaIndex,
+                    last: i == areas.length - 1,
+                    onTap: () {
+                      app.selectArea(i);
+                      app.selectTab(AppTab.home);
+                      Navigator.of(context).popUntil((r) => r.isFirst);
+                    },
+                    onRemove: () => app.unfollow(areas[i].station.id),
+                  ),
+                ),
               ),
-          ]),
+            ),
+          ),
+        if (app.areasArranged && areas.length > 1)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(kMargin, 8, kMargin, 0),
+            child: TextButton.icon(
+              key: const ValueKey('sort-nearest'),
+              onPressed: app.sortAreasByNearest,
+              icon: const Icon(Icons.near_me_outlined),
+              label: Text(context.tr('Show nearest area first again', 'Papar kawasan paling dekat dahulu semula', '重新先显示最近的地区')),
+            ),
+          ),
         const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: kMargin),
@@ -55,8 +101,10 @@ class SavedAreasScreen extends StatelessWidget {
 }
 
 class _AreaRow extends StatelessWidget {
-  const _AreaRow({required this.status, required this.selected, required this.last, required this.onTap, required this.onRemove});
+  const _AreaRow(
+      {required this.status, required this.index, required this.selected, required this.last, required this.onTap, required this.onRemove});
   final StationStatus status;
+  final int index; // position in the list, for the drag handle
   final bool selected;
   final bool last;
   final VoidCallback onTap;
@@ -67,8 +115,21 @@ class _AreaRow extends StatelessWidget {
     final c = context.colors;
     return Container(
       constraints: const BoxConstraints(minHeight: 64),
+      padding: const EdgeInsets.only(right: 4),
       decoration: BoxDecoration(border: last ? null : Border(bottom: BorderSide(color: c.divider))),
       child: Row(children: [
+        ReorderableDragStartListener(
+          index: index,
+          child: Tooltip(
+            message: context.tr('Drag to move ${status.station.name}', 'Seret untuk alih ${status.station.name}', '拖动以移动 ${status.station.name}'),
+            child: SizedBox(
+              key: ValueKey('drag-${status.station.id}'),
+              width: 48,
+              height: 64,
+              child: Icon(Icons.drag_indicator, color: c.textMuted),
+            ),
+          ),
+        ),
         Expanded(
           child: Semantics(
             button: true,

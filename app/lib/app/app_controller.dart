@@ -291,6 +291,8 @@ class AppController extends ChangeNotifier {
     centres = await evacuation.nearest(userLocation, limit: 20, includeUnavailable: true);
     // Distances from the sample point would be wrong, so no "nearest" then.
     nearest = locationIssue == null ? nearestStation(statuses, riverOnly: true) : null;
+    areasArranged = (await deps.flagsStore.load())[_arrangedFlag] == 'true';
+    _orderAreas();
     final n = homeData!.areaCards.length;
     if (areaIndex >= n) areaIndex = n == 0 ? 0 : n - 1;
     _lastRefresh = DateTime.now();
@@ -313,6 +315,62 @@ class AppController extends ChangeNotifier {
   }
 
   // ---------- areas ----------
+  static const _arrangedFlag = 'areasArranged';
+
+  /// True once the user has put the saved areas in their own order (Saved
+  /// areas screen). Until then the area nearest the phone comes first.
+  bool areasArranged = false;
+
+  /// Nearest saved area first (by its distance from the phone), unless the
+  /// user arranged them or the location is unknown: then the saved order.
+  void _orderAreas() {
+    final cards = homeData?.areaCards;
+    if (cards == null || areasArranged || locationIssue != null) return;
+    final saved = [for (final c in cards) c.station.id];
+    double key(StationStatus s) => s.distanceKm ?? double.infinity;
+    // Stable: equal distances keep the saved order.
+    final sorted = [...cards]..sort((a, b) {
+        final d = key(a).compareTo(key(b));
+        return d != 0 ? d : saved.indexOf(a.station.id).compareTo(saved.indexOf(b.station.id));
+      });
+    cards
+      ..clear()
+      ..addAll(sorted);
+  }
+
+  /// Moves saved area [i] up (delta -1) or down (+1).
+  Future<void> moveArea(int i, int delta) => reorderArea(i, i + delta);
+
+  /// Moves the saved area at [i] so it ends up at position [j] (drag and
+  /// drop on the Saved areas screen). The new order is kept (Home shows the
+  /// first one first) until [sortAreasByNearest].
+  Future<void> reorderArea(int i, int j) async {
+    final cards = homeData?.areaCards;
+    if (cards == null || i == j) return;
+    if (i < 0 || j < 0 || i >= cards.length || j >= cards.length) return;
+    final selectedId = currentArea?.station.id;
+    final moved = cards.removeAt(i);
+    cards.insert(j, moved);
+    await followed.reorder([for (final c in cards) c.station.id]);
+    await _setArranged(true);
+    areaIndex = selectedId == null ? 0 : cards.indexWhere((c) => c.station.id == selectedId);
+    notifyListeners();
+  }
+
+  /// Back to "nearest area first".
+  Future<void> sortAreasByNearest() async {
+    await _setArranged(false);
+    _orderAreas();
+    areaIndex = 0;
+    notifyListeners();
+  }
+
+  Future<void> _setArranged(bool on) async {
+    areasArranged = on;
+    final flags = await deps.flagsStore.load();
+    await deps.flagsStore.save({...flags, _arrangedFlag: on ? 'true' : 'false'});
+  }
+
   List<StationStatus> get areas => homeData?.areaCards ?? const [];
   StationStatus? get currentArea => areas.isEmpty ? null : areas[areaIndex];
 
@@ -321,8 +379,17 @@ class AppController extends ChangeNotifier {
   RiskLevel get checklistLevel {
     final a = currentArea;
     if (a == null) return RiskLevel.normal;
-    return a.isActionable ? a.level! : RiskLevel.alert;
+    final r = riverStatusFor(a);
+    return r.isActionable ? r.level! : RiskLevel.alert;
   }
+
+  /// River to show with [s]: its own gauge, or the nearest river gauge within
+  /// 10 km with a recent reading (a rain gauge has no river level of its own).
+  RiverSource? riverFor(StationStatus s) => riverSourceFor(s, statuses.isEmpty ? [s] : statuses);
+
+  /// The station whose river level and risk stand for [s] on Home: the
+  /// borrowed river gauge when there is one, otherwise [s] itself.
+  StationStatus riverStatusFor(StationStatus s) => riverFor(s)?.gauge ?? s;
 
   /// Rain to show with [s]: its own gauge, or the nearest gauge within 10 km
   /// with a reading under 3 hours old. Null: no rain data now.
@@ -350,7 +417,8 @@ class AppController extends ChangeNotifier {
   /// "Notify me from" level or above (no setup needed).
   ActiveAlerts get alerts => activeAlerts(
         statuses: statuses,
-        savedIds: {for (final a in areas) a.station.id},
+        // A saved rain gauge is watched through the river gauge shown with it.
+        savedIds: {for (final a in areas) ...{a.station.id, riverStatusFor(a).station.id}},
         nearestId: nearest?.station.id,
         forecasts: _trustedForecasts,
         minLevel: settings.notificationThreshold,

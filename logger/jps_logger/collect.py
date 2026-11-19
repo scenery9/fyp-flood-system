@@ -7,12 +7,16 @@ Each state has two interchangeable sources (SOURCES). For each state and each
 kind (river levels, rainfall) the first source is read; if it fails, finds
 nothing, or (Selangor) a district fails, the second source is read too and
 fills in what is missing. Swap the order in SOURCES to change which comes first.
+For the states in ALWAYS_BOTH the second source is always read as well, because
+it lists stations the first one does not; the first source wins for a station
+both list at the same time.
 
   - "selangor-api"     the Selangor JSON feed (jps.py): all stations, with positions
   - "melaka-site"      the Melaka web pages (melaka.py): with positions
   - "publicinfobanjir" the national pages (publicinfobanjir.py): both states,
                        no positions; Selangor stations are matched by their
-                       national id (jps_stations.jps_wl_id / jps_rf_id)
+                       national id (jps_stations.jps_wl_id / jps_rf_id), and a
+                       few Melaka stations by MELAKA_CODES
 
 Anything that fails is reported as a warning and skipped; the run fails
 (exit 1) only if nothing at all could be read.
@@ -28,7 +32,21 @@ from . import jps, melaka, publicinfobanjir as pib
 
 SOURCES = {
     "Selangor": ("selangor-api", "publicinfobanjir"),
-    "Melaka": ("publicinfobanjir", "melaka-site"),
+    # The Melaka site first: it has map positions and the codes the app already
+    # uses. publicinfobanjir adds about 23 Melaka stations the site does not list.
+    "Melaka": ("melaka-site", "publicinfobanjir"),
+}
+ALWAYS_BOTH = {"Melaka"}
+
+# The same Melaka station under another code on publicinfobanjir than on the
+# Melaka site (found 19 Nov 2026 by name and position). Readings from
+# publicinfobanjir are stored under the Melaka site's code, so one station
+# keeps one history. Every other Melaka code is the same on both.
+MELAKA_CODES = {
+    "0270231WL": "0270231",   # Sg. Siput di Jamb. Sg. Simpang Ampat
+    "0290161WL": "2322415",   # Sg. Durian Tunggal di Bt. 11 Air Resam
+    "0290221WL": "029022WL",  # Pintu Air Durian Tunggal D/S
+    "0290301RF": "2421004",   # Kg. Sg. Siput (rain)
 }
 KINDS = {"river": "river level", "rain": "rainfall"}
 ID_COLUMNS = {"river": "jps_wl_id", "rain": "jps_rf_id"}
@@ -131,10 +149,14 @@ class _Run:
                 note = f"{len(found) - len(mapped)} unmatched stations skipped"
             readings = self._readings(kind, mapped, self.now)
             return Part(readings=readings, read=bool(found), complete=bool(readings), note=note)
-        river, rain = (found, []) if kind == "river" else ([], found)
+        # A renamed station keeps the Melaka site's code; its details (name,
+        # position) are left as the Melaka site gave them, so no station row.
+        renamed = [dict(s, code=MELAKA_CODES[s["code"]]) for s in found if s["code"] in MELAKA_CODES]
+        same = [s for s in found if s["code"] not in MELAKA_CODES]
+        river, rain = (same, []) if kind == "river" else ([], same)
         plain = [{k: v for k, v in r.items() if k not in _NO_POSITION}
                  for r in melaka.station_rows(river, rain, self.now, state=state)]
-        readings = self._readings(kind, found, self.now)
+        readings = self._readings(kind, same + renamed, self.now)
         return Part(readings=readings, plain=plain, read=bool(found), complete=bool(readings))
 
     def _selangor_ids(self, kind):
@@ -209,7 +231,7 @@ def run(fetch, store, now, out=print, fetch_page=None, sources=None):
             for source in order:
                 part = r.read(state, kind, source)
                 parts.append((source, part))
-                if part.complete:
+                if part.complete and state not in ALWAYS_BOTH:
                     break
             anything = anything or any(p.read for _, p in parts)
             rows = _unique_readings([row for _, p in parts for row in p.readings])

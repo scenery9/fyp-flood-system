@@ -87,13 +87,14 @@ The app has four tabs and runs in **English, Bahasa Melayu and Chinese**.
   JPS only shows each station's latest value, so this log is what builds the history the
   model needs. A daily job moves finished days into compressed CSV files in `data/`, so
   Supabase keeps only 30 days (about 150 MB, within the free plan).
-  - **Two sources per state.** Selangor is read from the Selangor API first; Melaka from the
-    national pages (publicinfobanjir.water.gov.my) first. If the first source fails, finds
-    nothing, or (Selangor) a district fails, the other one fills in: publicinfobanjir for
-    Selangor, the JPS Melaka pages for Melaka. The order is `SOURCES` in
-    `logger/jps_logger/collect.py`. publicinfobanjir has no map positions, so stored positions
-    are kept; Selangor stations are matched by their national id (`jps_stations.jps_wl_id`,
-    `jps_rf_id`), which every normal run saves.
+  - **Two sources per state.** Selangor is read from the Selangor API first; if it fails, finds
+    nothing, or a district fails, the national pages (publicinfobanjir.water.gov.my) fill in.
+    Melaka is read from the JPS Melaka pages first, and publicinfobanjir is always read too:
+    it lists about 23 Melaka stations the Melaka pages do not. The order is `SOURCES` (and
+    `ALWAYS_BOTH`) in `logger/jps_logger/collect.py`. publicinfobanjir has no map positions, so
+    stored positions are kept; Selangor stations are matched by their national id
+    (`jps_stations.jps_wl_id`, `jps_rf_id`), which every normal run saves, and 4 Melaka
+    stations with a different code there by `MELAKA_CODES`.
   - **Started by Supabase.** GitHub's own schedule is best-effort and at times ran the job
     only every 5–8 hours, so the app showed "No recent data". Supabase `pg_cron` now starts
     the workflow every 15 minutes (`supabase/logger_schedule.sql`); GitHub's schedule stays

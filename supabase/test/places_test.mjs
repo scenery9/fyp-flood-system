@@ -130,5 +130,33 @@ try {
   check('sources.sql can be run twice', false, e.message);
 }
 
+// PL8 melaka_duplicates_cleanup.sql: readings move to the original station
+await db.exec(`
+  insert into public.jps_stations (station_code, name, state, lat, lon) values
+    ('2322415', 'Sg. Durian Tunggal Di Bt. 11 Air Resam', 'Melaka', 2.32339, 102.291),
+    ('0290161WL', 'Sg. Durian Tunggal di Bt. 11 Air Resam', 'Melaka', null, null),
+    ('0290301RF', 'Kg. Sg. Siput', 'Melaka', null, null);  -- its original 2421004 is missing here
+  insert into public.jps_river_levels values
+    ('2322415', '2026-11-19T11:00:00Z', 6.05),
+    ('0290161WL', '2026-11-19T11:15:00Z', 6.04),
+    ('0290161WL', '2026-11-19T11:00:00Z', 9.99);  -- same time as the original: the original's is kept
+  insert into public.jps_rainfall values ('0290301RF', '2026-11-19T11:15:00Z', 0, 0);
+`);
+const cleanup = readFileSync(new URL('../melaka_duplicates_cleanup.sql', import.meta.url), 'utf8');
+await db.exec(cleanup);
+r = await db.query(`select observed_at, level_m from public.jps_river_levels where station_code = '2322415' order by observed_at`);
+check('the duplicate\'s readings move to the original station',
+  r.rows.length === 2 && r.rows[0].level_m === 6.05 && r.rows[1].level_m === 6.04, r.rows);
+r = await db.query(`select count(*)::int as n from public.jps_stations where station_code = '0290161WL'`);
+check('the duplicate station is deleted', r.rows[0].n === 0, r.rows);
+r = await db.query(`select count(*)::int as n from public.jps_rainfall where station_code = '0290301RF'`);
+check('a duplicate whose original is missing is left alone (no readings lost)', r.rows[0].n === 1, r.rows);
+try {
+  await db.exec(cleanup);
+  check('the clean-up can be run twice', true);
+} catch (e) {
+  check('the clean-up can be run twice', false, e.message);
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
