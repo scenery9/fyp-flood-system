@@ -2,8 +2,11 @@
 import 'package:flood_app/app/app_controller.dart';
 import 'package:flood_app/app/platform.dart';
 import 'package:flood_app/app/sample_data.dart';
+import 'package:flood_app/screens/centres/centres_screen.dart' show StationTelemetryCard;
 import 'package:flood_app/screens/home/home_screen.dart';
 import 'package:flood_app/widgets/app_map.dart';
+import 'package:flood_app/screens/prepare/prepare_screen.dart' show WayOutCard;
+import 'package:flood_app/widgets/common.dart' show PillSegments;
 import 'package:flood_core/flood_core.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,7 +85,7 @@ void main() {
       await TestApp().start(tester);
       expect(find.text('Danger'), findsWidgets);
       expect(inAreaCard('19.97 m'), findsOneWidget);
-      expect(find.text('Danger from 19.95 m'), findsOneWidget);
+      expect(inAreaCard('Danger at 19.95 m'), findsOneWidget); // the next JPS line, under the reading
     });
 
     testWidgets('next arrow, previous arrow and dots change the area', (tester) async {
@@ -109,7 +112,8 @@ void main() {
     testWidgets('no saved areas: shows the station nearest the user, with Save', (tester) async {
       final app = TestApp(followed: const []);
       await app.start(tester);
-      expect(find.text('Nearest to you · 1.2 km'), findsOneWidget); // the card (the alert banner also says it)
+      expect(inAreaCard('Nearest to you'), findsOneWidget);
+      expect(inAreaCard('$awat (1.2 km)'), findsOneWidget); // distance beside the name
       expect(find.text(awat), findsWidgets);
       await tapIt(tester, find.byKey(const ValueKey('save-nearest')));
       expect(await app.followedStore.load(), ['JHR-AWAT']);
@@ -183,7 +187,7 @@ void main() {
 
     testWidgets('area with no forecast says so', (tester) async {
       await TestApp(followed: const ['SGR-RANTAU']).start(tester);
-      expect(find.text('No recent data'), findsOneWidget); // area card at the top
+      expect(inAreaCard('Outdated reading (>3h) — paused for alerts'), findsOneWidget); // JPS has not updated it
       await reveal(tester, find.text('No forecast for this area right now'));
     });
   });
@@ -391,19 +395,25 @@ void main() {
       await TestApp().start(tester);
       await openTab(tester, 'Centres');
       await tapIt(tester, find.text('Rain'));
-      expect(find.text('Rain gauges · nearest first'), findsOneWidget);
-      // List row (the map pin shows the same 35.0 mm/h).
-      expect(find.textContaining('35.0 mm/h · '), findsOneWidget); // Buloh Kasap, about 5 km
-      expect(find.textContaining('65.0 mm/h'), findsNothing, reason: 'Durian Tunggal is about 60 km away');
+      Finder inList(String text) => find.descendant(of: find.byType(StationTelemetryCard), matching: find.text(text));
+      expect(find.text('Rainfall now'), findsOneWidget);
+      expect(find.text('Nearest first'), findsOneWidget);
+      // List card (the map pin shows the same 35.0 mm/h).
+      expect(inList('35.0 mm/h'), findsOneWidget); // Buloh Kasap, about 5 km
+      expect(inList('65.0 mm/h'), findsNothing, reason: 'Durian Tunggal is about 60 km away');
       await tapIt(tester, find.text('Highest risk'));
-      expect(find.text('Rain gauges · heaviest first'), findsOneWidget);
+      expect(find.text('Heaviest first'), findsOneWidget);
       await tapIt(tester, find.byKey(const ValueKey('radius-30.0')));
-      expect(find.textContaining('65.0 mm/h'), findsNothing);
+      expect(inList('65.0 mm/h'), findsNothing);
       await tapIt(tester, find.text('River'));
+      expect(find.text('River levels now'), findsOneWidget);
+      // How close to the next line is on the station page, not the list card.
+      expect(find.textContaining('% to Warning'), findsNothing);
+      expect(find.descendant(of: find.byType(StationTelemetryCard), matching: find.byType(LinearProgressIndicator)), findsNothing);
+      expect(find.descendant(of: find.byType(StationTelemetryCard), matching: find.textContaining(RegExp(r'^Updated since \d\d:\d\d \('))),
+          findsWidgets);
       // Level now with the AI arrow, kept together on one line.
       expect(find.text('8.00\u00A0m\u00A0↑'), findsOneWidget);
-      expect(find.textContaining(RegExp(r'% to Warning \(\d+\.\d\d m\)')), findsWidgets);
-      expect(find.textContaining('Above the Danger line ('), findsWidgets); // Kg. Awat
       // At test screen size this pin sits outside the visible part of the map
       // (a user would pan to it), so call its tap action directly.
       tester.widget<GestureDetector>(find.byKey(const ValueKey('pin-JHR-AWAT'))).onTap!();
@@ -412,10 +422,28 @@ void main() {
     });
   });
 
+  // SOS is in the Danger checklist on Prepare (not on Home).
+  Future<void> openSos(WidgetTester tester) async {
+    await openTab(tester, 'Prepare');
+    await tapIt(tester, find.descendant(of: find.byType(PillSegments<RiskLevel>), matching: find.text('Danger')));
+    await reveal(tester, find.byKey(const ValueKey('sos')));
+  }
+
   group('TP58 SOS', () {
+    testWidgets('only in the Danger checklist: not on Home, not on other levels', (tester) async {
+      await TestApp().start(tester);
+      expect(find.byKey(const ValueKey('sos')), findsNothing); // Home
+      await openTab(tester, 'Prepare');
+      await tapIt(tester, find.descendant(of: find.byType(PillSegments<RiskLevel>), matching: find.text('Normal')));
+      await reveal(tester, find.byType(WayOutCard));
+      expect(find.byKey(const ValueKey('sos')), findsNothing);
+      await openSos(tester);
+      expect(find.byKey(const ValueKey('sos')), findsOneWidget);
+    });
     testWidgets('tap opens the sheet; Call 999 now dials 999', (tester) async {
       final app = TestApp();
       await app.start(tester);
+      await openSos(tester);
       await tapIt(tester, find.byKey(const ValueKey('sos')).first);
       await tapIt(tester, find.byKey(const ValueKey('sos-call-now')));
       expect(app.opener.opened.first.toString(), 'tel:999');
@@ -425,6 +453,7 @@ void main() {
     testWidgets('holding for 2 seconds calls 999 without the sheet', (tester) async {
       final app = TestApp();
       await app.start(tester);
+      await openSos(tester);
       final sos = find.byKey(const ValueKey('sos')).first;
       await tester.ensureVisible(sos);
       await tester.pumpAndSettle();
@@ -440,6 +469,7 @@ void main() {
     testWidgets('releasing early does not call', (tester) async {
       final app = TestApp();
       await app.start(tester);
+      await openSos(tester);
       final sos = find.byKey(const ValueKey('sos')).first;
       final g = await tester.startGesture(tester.getCenter(sos));
       await tester.pump(const Duration(milliseconds: 900));
@@ -452,6 +482,7 @@ void main() {
       final app = TestApp();
       await app.contactStore.save({'phone': '0123456789'});
       await app.start(tester);
+      await openSos(tester);
       await tapIt(tester, find.byKey(const ValueKey('sos')).first);
       await tapIt(tester, find.byKey(const ValueKey('sos-call-now')));
       await tapIt(tester, find.byKey(const ValueKey('sos-sms')));
@@ -464,6 +495,7 @@ void main() {
       final app = TestApp();
       app.opener.result = false;
       await app.start(tester);
+      await openSos(tester);
       await tapIt(tester, find.byKey(const ValueKey('sos')).first);
       await tapIt(tester, find.byKey(const ValueKey('sos-call-now')));
       expect(find.text('Could not open the phone app. Dial 999 yourself.'), findsOneWidget);

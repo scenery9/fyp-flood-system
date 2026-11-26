@@ -73,20 +73,35 @@ def test_empty_day_still_gets_a_file(tmp_path):
 
 
 # AR2 archiving
-def test_archives_finished_days_only_and_catches_up(tmp_path):
+def test_archives_up_to_yesterday_and_catches_up(tmp_path):
     store = FakeStore(
         levels=[lvl("A", "2026-11-16T17:00:00Z", 1.0),   # 17 Nov MYT
                 lvl("A", "2026-11-17T17:00:00Z", 1.1),   # 18 Nov MYT
-                lvl("A", "2026-11-18T17:00:00Z", 1.2),   # 19 Nov MYT: not two days old yet
-                lvl("A", "2026-11-19T17:00:00Z", 1.3)],  # 20 Nov MYT: today
+                lvl("A", "2026-11-18T17:00:00Z", 1.2),   # 19 Nov MYT: yesterday
+                lvl("A", "2026-11-19T17:00:00Z", 1.3)],  # 20 Nov MYT: today, not finished
         rain=[rn("A", "2026-11-16T17:00:00Z", 5.0)])
     msgs = []
     archive.run_archive(store, tmp_path, TODAY, msgs.append)
     files = sorted(p.name for p in tmp_path.rglob("*.csv.gz"))
-    assert files == ["2026-11-17.csv.gz", "2026-11-18.csv.gz"]
-    assert "2 day(s) archived" in msgs[-1]
+    assert files == ["2026-11-17.csv.gz", "2026-11-18.csv.gz", "2026-11-19.csv.gz"]
+    assert "3 day(s) archived" in msgs[-1]
     archive.run_archive(store, tmp_path, TODAY, msgs.append)
-    assert "0 day(s) archived" in msgs[-1]  # already done: nothing rewritten
+    assert "0 day(s) archived" in msgs[-1]  # the open days are rewritten, but nothing changed
+
+
+def test_late_readings_reach_the_open_days_only(tmp_path):
+    store = FakeStore(levels=[lvl("A", "2026-11-16T17:00:00Z", 1.0),    # 17 Nov: closed
+                              lvl("A", "2026-11-18T17:00:00Z", 1.2)])   # 19 Nov: yesterday
+    archive.run_archive(store, tmp_path, TODAY, lambda m: None)
+    closed = archive_path(tmp_path, date(2026, 11, 17)).read_bytes()
+    # readings that came in late (the logger accepts readings up to 24 hours old)
+    store.tables["jps_river_levels"] += [lvl("A", "2026-11-19T15:45:00Z", 1.25),   # 19 Nov 23:45 MYT
+                                         lvl("A", "2026-11-16T18:00:00Z", 9.9)]    # 17 Nov: too late
+    msgs = []
+    archive.run_archive(store, tmp_path, TODAY, msgs.append)
+    assert "Updated 2026-11-19 with late readings: 2 readings" in msgs
+    assert archive_path(tmp_path, date(2026, 11, 17)).read_bytes() == closed  # closed days never change
+    assert "1 day(s) archived or updated" in msgs[-1]
 
 
 def test_day_boundaries_put_each_reading_in_its_malaysia_day(tmp_path):

@@ -7,7 +7,6 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/read_aloud_button.dart';
 import '../../widgets/river_gauge.dart';
-import '../../widgets/sos_button.dart';
 import '../more/saved_areas_screen.dart';
 import '../prepare/checklist_steps_screen.dart';
 import '../report/report_screen.dart';
@@ -47,8 +46,7 @@ class HomeScreen extends StatelessWidget {
                   label: Text(context.tr('Go to relief centre', 'Pergi ke pusat pemindahan')),
                 ),
                 const SizedBox(height: kGap),
-                const SosButton(),
-                const SizedBox(height: kGap),
+                // SOS lives in the Danger checklist on Prepare (project scope), not on Home.
                 OutlinedButton.icon(
                   key: const ValueKey('report-flooding'),
                   onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const ReportScreen())),
@@ -205,7 +203,18 @@ String rainWord(BuildContext context, RainIntensity? i) => switch (i) {
       _ => context.tr('No rain now', 'Tiada hujan sekarang', '目前无雨'),
     };
 
-/// One area's status: the risk word, the river reading and when it was read.
+/// One word for a rain band, for the small pill on the Rainfall tile.
+String rainShort(BuildContext context, RainIntensity? i) => switch (i) {
+      RainIntensity.light => context.tr('Light', 'Renyai', '小雨'),
+      RainIntensity.moderate => context.tr('Moderate', 'Sederhana', '中雨'),
+      RainIntensity.heavy => context.tr('Heavy', 'Lebat', '大雨'),
+      RainIntensity.veryHeavy => context.tr('Very heavy', 'Sangat lebat', '暴雨'),
+      _ => context.tr('No rain', 'Tiada hujan', '无雨'),
+    };
+
+/// One area at a glance: name, an amber notice only when the reading is late,
+/// River level and Rainfall side by side, then when JPS last updated.
+/// Tap anywhere (outside Change / Save) for the full station details.
 class AreaCard extends StatelessWidget {
   const AreaCard({super.key, required this.status, this.nearestMode = false});
   final StationStatus status;
@@ -224,175 +233,235 @@ class AreaCard extends StatelessWidget {
     final g = river?.gauge ?? s;
     final borrowed = river != null && !river.isOwnGauge;
     final known = g.level != null && !g.isStale;
-    final style = RiskStyle.of(known ? g.level : null);
+    final stale = g.freshness == Freshness.stale;
     final t = g.station.thresholds;
-    String? nextLine;
-    if (t != null && g.targetLevel != null && g.level != RiskLevel.danger) {
-      final v = switch (g.targetLevel!) {
-        RiskLevel.normal => t.normal,
-        RiskLevel.alert => t.alert,
-        RiskLevel.warning => t.warning,
-        RiskLevel.danger => t.danger,
-      };
-      nextLine = context.tr('${context.levelName(g.targetLevel)} from ${metres(v)}', '${context.levelName(g.targetLevel)} dari ${metres(v)}', '${metres(v)} 起为${context.levelName(g.targetLevel)}');
-    } else if (t != null && g.level == RiskLevel.danger) {
-      nextLine = context.tr('Danger from ${metres(t.danger)}', 'Bahaya dari ${metres(t.danger)}', '${metres(t.danger)} 起为危险');
+    final noRiverGauge = river == null && s.station.thresholds == null && s.riverLevel == null;
+
+    // River tile footer: the next JPS line ("Alert at 2.50 m").
+    String riverFoot;
+    if (noRiverGauge) {
+      riverFoot = context.tr('No river gauge nearby', 'Tiada tolok sungai berdekatan', '附近没有河水位站');
+    } else if (t == null) {
+      riverFoot = context.tr('No risk level given', 'Tiada tahap risiko', '无风险级别');
+    } else {
+      final next = g.level == RiskLevel.danger || g.targetLevel == null ? RiskLevel.danger : g.targetLevel!;
+      riverFoot = context.tr('${context.levelName(next)} at ${lineHeight(g, next)}', '${context.levelName(next)} pada ${lineHeight(g, next)}',
+          '${lineHeight(g, next)} 为${context.levelName(next)}');
     }
-    final distance = s.distanceKm == null ? '' : ' · ${s.distanceKm!.toStringAsFixed(1)} km';
-    // A rain gauge with no river gauge: lead with the rain, not "No recent data".
-    final rainOnly = !known && t == null && s.riverLevel == null && s.rainfall != null && !s.isStale;
-    final heavyRain = rainOnly && (s.rainIntensity?.index ?? 0) >= RainIntensity.heavy.index;
-    final word = known
-        ? context.levelName(g.level)
-        : rainOnly
-            ? rainWord(context, s.rainIntensity)
-            : context.tr('No recent data', 'Tiada data terkini');
-    final other = borrowed
-        ? context.tr('River gauge ${river.distanceKm!.toStringAsFixed(1)} km: ${g.station.name}',
-            'Tolok sungai ${river.distanceKm!.toStringAsFixed(1)} km: ${g.station.name}',
-            '河水位站（${river.distanceKm!.toStringAsFixed(1)} 公里）：${g.station.name}')
-        : known
-        ? (app.language == AppLanguage.ms ? g.level!.labelEn : g.level!.labelBm)
-        : rainOnly
-            ? context.tr('Rain gauge only, no river reading', 'Tolok hujan sahaja, tiada bacaan sungai', '仅雨量站，无河水位读数')
-            : (s.isStale ? context.tr('Last reading is too old to use', 'Bacaan terakhir terlalu lama') : context.tr('No river reading', 'Tiada bacaan sungai'));
-    final wordColor = !rainOnly ? style.color : (heavyRain ? RiskStyle.of(RiskLevel.warning).color : c.primary);
-    final icon = rainOnly ? Icons.water_drop : style.icon;
+    final riverValue = noRiverGauge
+        ? context.tr('No gauge', 'Tiada tolok', '无测站')
+        : (g.riverLevel != null ? metres(g.riverLevel!) : '—');
 
-    // The big reading says what it is: river water (or rain, for a rain gauge).
-    final valueLabel = rainOnly ? context.tr('Rain: ', 'Hujan: ', '雨量：') : context.tr('River water: ', 'Air sungai: ', '河水位：');
-    final value = rainOnly ? '${s.rainfall!.toStringAsFixed(1)} mm/h' : (g.riverLevel != null ? metres(g.riverLevel!) : '—');
-    void openDetails() =>
-        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StationDetailScreen(stationId: g.station.id)));
-
-    // Rain: this station's own gauge, else the nearest one reporting (named, with distance).
+    // Rain: this station's own gauge, else the nearest one reporting.
     final rain = app.rainFor(s);
-    final rainHeavy = rain != null && rain.intensity.index >= RainIntensity.heavy.index;
-    final rainColor = rain == null ? c.textMuted : (rainHeavy ? RiskStyle.of(RiskLevel.warning).color : c.primary);
-    final rainLine = rain == null
-        ? context.tr('Rain: no rain data now', 'Hujan: tiada data hujan sekarang', '雨量：目前无雨量数据')
-        : context.tr('Rain: ${rainWord(context, rain.intensity)} · ${rain.mmPerHr.toStringAsFixed(1)} mm/h',
-            'Hujan: ${rainWord(context, rain.intensity)} · ${rain.mmPerHr.toStringAsFixed(1)} mm/j',
-            '雨量：${rainWord(context, rain.intensity)} · ${rain.mmPerHr.toStringAsFixed(1)} 毫米/时');
-    final rainAge = rain != null && rain.age > const Duration(minutes: 75) ? ' · ${formatAge(context, rain.age)}' : '';
-    final rainWhere = rain == null
-        ? context.tr('No rain gauge reporting within 10 km', 'Tiada tolok hujan melapor dalam 10 km', '10 公里内无雨量站报告')
+    final rainAgo = rain != null && rain.age >= StationStatus.delayedAfter ? ' (${formatAge(context, rain.age)})' : '';
+    final rainFoot = rain == null
+        ? context.tr('None within 10 km', 'Tiada dalam 10 km', '10 公里内没有')
         : rain.isOwnGauge
-            ? context.tr('Rain gauge at this station$rainAge', 'Tolok hujan di stesen ini$rainAge', '本站雨量计$rainAge')
-            : context.tr('Nearest rain gauge (${rain.distanceKm!.toStringAsFixed(1)} km): ${rain.gauge.station.name}$rainAge',
-                'Tolok hujan terdekat (${rain.distanceKm!.toStringAsFixed(1)} km): ${rain.gauge.station.name}$rainAge',
-                '最近雨量站（${rain.distanceKm!.toStringAsFixed(1)} 公里）：${rain.gauge.station.name}$rainAge');
-    // Every line has a fixed slot and is one line long, so all saved-area
-    // cards are the same height and the carousel does not jump on change.
-    Widget oneLine(String text, TextStyle style) => Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
-    Widget fitLine(String text, TextStyle style) =>
-        FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: Text(text, style: style, maxLines: 1));
+            ? context.tr('At this station$rainAgo', 'Di stesen ini$rainAgo', '本站$rainAgo')
+            : context.tr('Gauge ${rain.distanceKm!.toStringAsFixed(1)} km away$rainAgo', 'Tolok ${rain.distanceKm!.toStringAsFixed(1)} km$rainAgo',
+                '雨量站 ${rain.distanceKm!.toStringAsFixed(1)} 公里$rainAgo');
+    final rainHeavy = rain != null && rain.intensity.index >= RainIntensity.heavy.index;
 
-    // Same padding (16) and small top label as the other Home cards, so the
-    // text lines up with the AI forecast and checklist cards below.
-    // Tap anywhere on the card for the full station details (like the high-risk list).
+    // One amber line only when something is wrong. A JPS problem says the
+    // most (what JPS shows, and the last good reading), then an outdated
+    // reading, then a late one. Hidden when the reading is live and fine.
+    final notice = noRiverGauge
+        ? null
+        : switch (g.dataIssue) {
+            DataIssue.stale => freshnessNotice(context, g),
+            DataIssue.none || DataIssue.rainOnly => freshnessNotice(context, g),
+            _ => dataIssueText(context, g),
+          };
+    // No usable level, but not simply old: a grey pill says why ("Invalid reading").
+    final issuePill = known || noRiverGauge || g.dataIssue == DataIssue.stale ? null : dataIssueLabel(context, g);
+
+    final distance = s.distanceKm == null ? '' : ' (${s.distanceKm!.toStringAsFixed(1)} km)';
+    final source = app.deps.liveData ? context.tr('JPS data', 'Data JPS', 'JPS数据') : context.tr('Sample data', 'Data contoh', '示例数据');
+    final riverWord = known ? context.levelName(g.level) : (dataIssueLabel(context, g) ?? '');
+    final label = [
+      '${s.station.name}$distance',
+      context.tr('River level $riverValue', 'Paras sungai $riverValue', '河水位 $riverValue'),
+      if (riverWord.isNotEmpty) riverWord,
+      if (borrowed) context.tr('from ${g.station.name}', 'dari ${g.station.name}', '来自${g.station.name}'),
+      rain == null
+          ? context.tr('No rain gauge within 10 km', 'Tiada tolok hujan dalam 10 km', '10 公里内无雨量站')
+          : context.tr('Rainfall ${rain.mmPerHr.toStringAsFixed(1)} mm/h, ${rainShort(context, rain.intensity)}',
+              'Hujan ${rain.mmPerHr.toStringAsFixed(1)} mm/j, ${rainShort(context, rain.intensity)}',
+              '雨量 ${rain.mmPerHr.toStringAsFixed(1)} 毫米/时，${rainShort(context, rain.intensity)}'),
+      ?notice,
+      updatedSince(context, g),
+    ].join('. ');
+
+    final pillStyle = FilledButton.styleFrom(
+      minimumSize: const Size(48, 44),
+      shape: const StadiumBorder(),
+      backgroundColor: c.primaryTint,
+      foregroundColor: c.primary,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+    );
+
     return AppCard(
       key: ValueKey('area-card-${s.station.id}'),
-      onTap: openDetails,
-      child: Semantics(
-        container: true,
-        button: true,
-        hint: context.tr('Open station details', 'Buka butiran stesen', '打开测站详情'),
-        label: '${s.station.name}. $word. ${borrowed ? '$other. ' : ''}$rainLine. $rainWhere.',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
+      onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StationDetailScreen(stationId: g.station.id))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        // Top row: what this card is, and Change / Save.
+        Row(children: [
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(color: c.primaryTint, borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                nearestMode ? context.tr('Nearest to you', 'Paling dekat dengan anda', '离您最近') : context.tr('Saved area', 'Kawasan disimpan', '已保存地区'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.primary),
+              ),
+            ),
+          ),
+          const Spacer(),
+          if (nearestMode)
+            FilledButton.tonal(
+              key: const ValueKey('save-nearest'),
+              style: pillStyle,
+              onPressed: () => app.follow(s.station.id),
+              child: Text(context.tr('Save area', 'Simpan kawasan', '保存地区')),
+            )
+          else
+            FilledButton.tonal(
+              key: const ValueKey('change-area'),
+              style: pillStyle,
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SavedAreasScreen())),
+              child: Text(context.tr('Change', 'Tukar', '更改')),
+            ),
+        ]),
+        const SizedBox(height: 8),
+        Semantics(
+          container: true,
+          label: label,
+          hint: context.tr('Open station details', 'Buka butiran stesen', '打开测站详情'),
+          excludeSemantics: true,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // Name with distance beside it, then district and state.
+            Text('${s.station.name}$distance',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 18, height: 1.25, fontWeight: FontWeight.w700, color: c.text, fontFeatures: AppText.tabular)),
+            const SizedBox(height: 2),
+            Text('${s.station.district}, ${s.station.state}',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, color: c.textMuted)),
+            if (borrowed) ...[
+              const SizedBox(height: 2),
+              Text(
+                context.tr('River gauge ${river.distanceKm!.toStringAsFixed(1)} km: ${g.station.name}',
+                    'Tolok sungai ${river.distanceKm!.toStringAsFixed(1)} km: ${g.station.name}',
+                    '河水位站（${river.distanceKm!.toStringAsFixed(1)} 公里）：${g.station.name}'),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: c.textMuted, fontFeatures: AppText.tabular),
+              ),
+            ],
+            if (notice != null) ...[const SizedBox(height: 12), AmberBanner(notice)],
+            const SizedBox(height: 12),
+            IntrinsicHeight(
+              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Expanded(
-                    child: oneLine(
-                        nearestMode
-                            ? context.tr('Nearest to you$distance', 'Paling dekat dengan anda$distance', '离您最近$distance')
-                            : context.tr('Saved area$distance', 'Kawasan disimpan$distance', '已保存地区$distance'),
-                        context.text.labelMedium!)),
-                const SizedBox(width: 8),
-                if (nearestMode)
-                  FilledButton.tonal(
-                    key: const ValueKey('save-nearest'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size(48, 48),
-                      shape: const StadiumBorder(),
-                      backgroundColor: c.background == Colors.white ? c.primaryTint : const Color(0xFFEAF1F8),
-                      foregroundColor: c.primary,
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                    ),
-                    onPressed: () => app.follow(s.station.id),
-                    child: Text(context.tr('Save area', 'Simpan kawasan', '保存地区')),
-                  )
-                else
-                FilledButton.tonal(
-                  key: const ValueKey('change-area'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(48, 48),
-                    shape: const StadiumBorder(),
-                    backgroundColor: c.background == Colors.white ? c.primaryTint : const Color(0xFFEAF1F8),
-                    foregroundColor: c.primary,
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: MetricTile(
+                    key: const ValueKey('tile-river'),
+                    title: context.tr('River level', 'Paras sungai', '河水位'),
+                    pill: known
+                        ? StatusPill.risk(context, g.level)
+                        : (issuePill == null ? null : StatusPill(text: issuePill, color: RiskStyle.of(null).onTint, tint: RiskStyle.of(null).tint)),
+                    value: riverValue,
+                    valueMuted: noRiverGauge || stale || g.riverLevel == null,
+                    footer: riverFoot,
                   ),
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SavedAreasScreen())),
-                  child: Text(context.tr('Change area', 'Tukar kawasan')),
                 ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  fitLine(s.station.name, context.text.titleMedium!),
-                  oneLine('${s.station.district}, ${s.station.state}', context.text.bodyMedium!),
-                  const SizedBox(height: 16),
-                  fitLine(word, context.text.displayMedium!.copyWith(color: wordColor)),
-                  Row(children: [
-                    Icon(icon, color: wordColor, size: 22),
-                    const SizedBox(width: 8),
-                    Expanded(child: oneLine(other, context.text.titleLarge!.copyWith(color: c.textMuted, fontWeight: FontWeight.w400))),
-                  ]),
-                  const SizedBox(height: 20),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(valueLabel, style: context.text.titleMedium!.copyWith(color: c.textMuted, fontWeight: FontWeight.w400)),
-                      Flexible(child: fitLine(value, context.text.headlineLarge!.copyWith(fontWeight: FontWeight.w600, fontFeatures: AppText.tabular))),
-                    ],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: MetricTile(
+                    key: const ValueKey('tile-rain'),
+                    title: context.tr('Rainfall', 'Hujan', '雨量'),
+                    pill: rain == null
+                        ? null
+                        : StatusPill(
+                            text: rainShort(context, rain.intensity),
+                            color: rainHeavy ? RiskStyle.of(RiskLevel.warning).onTint : c.primary,
+                            tint: rainHeavy ? RiskStyle.of(RiskLevel.warning).tint : c.primaryTint,
+                          ),
+                    value: rain == null
+                        ? context.tr('No gauge', 'Tiada tolok', '无测站')
+                        : context.tr('${rain.mmPerHr.toStringAsFixed(1)} mm/h', '${rain.mmPerHr.toStringAsFixed(1)} mm/j',
+                            '${rain.mmPerHr.toStringAsFixed(1)} 毫米/时'),
+                    valueMuted: rain == null,
+                    footer: rainFoot,
                   ),
-                  // Kept even when empty so every card has the same height.
-                  oneLine(nextLine ?? ' ', context.text.bodyLarge!.copyWith(color: c.textMuted, fontFeatures: AppText.tabular)),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    Icon(Icons.water_drop, color: rainColor, size: 20),
-                    const SizedBox(width: 6),
-                    Expanded(
-                        child: oneLine(rainLine, context.text.bodyLarge!.copyWith(
-                            color: rain == null ? c.textMuted : null, fontWeight: rainHeavy ? FontWeight.w600 : null))),
-                  ]),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 26),
-                    child: oneLine(rainWhere, context.text.bodyMedium!.copyWith(color: c.textMuted)),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: oneLine(
-                        AppScope.of(context).deps.liveData
-                            ? context.tr('Updated ${formatAge(context, g.age)} · JPS data', 'Dikemas kini ${formatAge(context, g.age)} · data JPS', '更新于${formatAge(context, g.age)} · JPS数据')
-                            : context.tr('Updated ${formatAge(context, g.age)} · sample data', 'Dikemas kini ${formatAge(context, g.age)} · data contoh', '更新于${formatAge(context, g.age)} · 示例数据'),
-                        context.text.bodyMedium!,
-                      ),
-                    ),
-                    Text(context.tr('Details', 'Butiran', '详情'), style: context.text.bodyMedium!.copyWith(color: c.primary)),
-                    const Chevron(),
-                  ]),
-                ],
+                ),
+              ]),
             ),
-          ],
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: UpdatedLine(g, maxLines: 2)),
+              const SizedBox(width: 8),
+              Text(source, style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+            ]),
+          ]),
         ),
+      ]),
+    );
+  }
+}
+
+/// One half of the River level | Rainfall pair: title and pill, the big
+/// reading, then one quiet line under it.
+class MetricTile extends StatelessWidget {
+  const MetricTile({super.key, required this.title, required this.value, required this.footer, this.pill, this.valueMuted = false});
+  final String title;
+  final Widget? pill;
+  final String value;
+  final bool valueMuted;
+  final String footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final noValue = valueMuted && !RegExp(r'\d').hasMatch(value); // "No gauge", "—"
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: c.cardBorder == null ? null : Border.all(color: c.divider),
       ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // Title and pill wrap onto two lines at large text sizes.
+        Wrap(spacing: 6, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Text(title, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: c.textMuted)),
+          ?pill,
+        ]),
+        const SizedBox(height: 6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            maxLines: 1,
+            style: noValue
+                ? TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.textMuted)
+                : TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    fontFeatures: AppText.tabular,
+                    color: valueMuted ? const Color(0xFF475569) : c.text,
+                  ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(footer,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12, color: c.textMuted, fontFeatures: AppText.tabular)),
+      ]),
     );
   }
 }

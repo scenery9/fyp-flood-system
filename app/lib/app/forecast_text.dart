@@ -78,6 +78,20 @@ String _window(BuildContext c, String feature) {
           ? c.tr('Upstream river fell $m m in $w', 'Sungai di hulu turun $m m dalam $w', '$w上游河流下降 $m 米')
           : c.tr('River fell $m m in $w', 'Sungai turun $m m dalam $w', '$w河流下降 $m 米');
     }
+  } else if (f.feature.startsWith('same_time_') && v != null) {
+    // what the river did in the 3 hours after the same moment one tide (12 h) or one day (25 h) ago
+    final h = f.feature == 'same_time_12h_ago' ? 12 : 25;
+    final m = v.abs().toStringAsFixed(2);
+    if (v.abs() < 0.005) {
+      text = c.tr('$h hours ago, the river stayed the same over the next 3 hours',
+          '$h jam lalu, sungai kekal sama dalam 3 jam berikutnya', '$h 小时前，河流在随后3小时保持不变');
+    } else if (v > 0) {
+      text = c.tr('$h hours ago, the river rose $m m over the next 3 hours',
+          '$h jam lalu, sungai naik $m m dalam 3 jam berikutnya', '$h 小时前，河流在随后3小时上升 $m 米');
+    } else {
+      text = c.tr('$h hours ago, the river fell $m m over the next 3 hours',
+          '$h jam lalu, sungai turun $m m dalam 3 jam berikutnya', '$h 小时前，河流在随后3小时下降 $m 米');
+    }
   } else if (f.feature == 'level_above_normal' && v != null) {
     final m = v.abs().toStringAsFixed(2);
     text = v >= 0

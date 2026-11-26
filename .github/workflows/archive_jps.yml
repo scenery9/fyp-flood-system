@@ -1,7 +1,8 @@
 name: Archive JPS readings
 
 # Daily at 03:13 Malaysia time (19:13 UTC).
-# 1. Saves every finished day from Supabase to data/YYYY/MM/YYYY-MM-DD.csv.gz
+# 1. Saves every finished day up to yesterday from Supabase to data/YYYY/MM/YYYY-MM-DD.csv.gz
+#    (the last two days are saved again each run, to add readings that came in late)
 # 2. Commits and pushes those files (this also keeps the repository "active",
 #    so GitHub does not switch off the 15-minute logger after 60 quiet days)
 # 3. Only then deletes archived days older than 30 days from Supabase
@@ -45,7 +46,8 @@ jobs:
           if git diff --cached --quiet; then
             echo "No new archive files"
           else
-            git commit -m "Archive JPS readings ($(date -u +%Y-%m-%d))"
+            # named after the last day saved (yesterday, Malaysia time), not the day the job ran
+            git commit -m "Archive JPS readings (up to $(TZ=Asia/Kuala_Lumpur date -d yesterday +%Y-%m-%d))"
             git pull --rebase
             git push
           fi

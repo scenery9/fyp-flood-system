@@ -39,11 +39,14 @@ class PutatRepository implements StationRepository {
 
 void main() {
   Finder inCard(String text) => find.descendant(of: find.byType(AreaCard), matching: find.text(text));
+  // The name has its distance beside it: "Kg. Sg. Putat (40.1 km)".
+  Finder nameInCard(String name) => find.descendant(
+      of: find.byType(AreaCard), matching: find.byWidgetPredicate((w) => w is Text && (w.data ?? '').startsWith('$name (') && (w.data ?? '').endsWith(' km)')));
 
   group('TP99 A saved rain gauge shows the nearest river', () {
     testWidgets('Kg. Sg. Putat RF shows the river gauge at the same place', (tester) async {
       await TestApp(followed: const ['0290491RF'], repository: PutatRepository()).start(tester);
-      expect(inCard('Kg. Sg. Putat'), findsOneWidget); // still the saved area's name
+      expect(nameInCard('Kg. Sg. Putat'), findsOneWidget); // still the saved area's name
       expect(inCard('Warning'), findsOneWidget);
       expect(inCard('4.20 m'), findsOneWidget);
       expect(inCard('River gauge 0.0 km: Sg. Putat di Kg. Sg. Putat'), findsOneWidget);
@@ -54,7 +57,7 @@ void main() {
     testWidgets('Stor Bukit Baru RF shows the nearest river gauge, with its distance', (tester) async {
       final app = TestApp(followed: const ['0290361RF'], repository: PutatRepository());
       await app.start(tester);
-      expect(inCard('Stor Bukit Baru'), findsOneWidget);
+      expect(nameInCard('Stor Bukit Baru'), findsOneWidget);
       expect(inCard('4.20 m'), findsOneWidget);
       expect(inCard('River gauge 4.8 km: Sg. Putat di Kg. Sg. Putat'), findsOneWidget);
       // the checklist and alerts follow the river shown, not "unknown"
@@ -74,7 +77,7 @@ void main() {
       final app = TestApp(followed: const ['SGR-KAJANG', 'JHR-AWAT']);
       await app.start(tester);
       expect(order(app), ['JHR-AWAT', 'SGR-KAJANG']);
-      expect(inCard('Sg. Muar di Kg. Awat'), findsOneWidget);
+      expect(nameInCard('Sg. Muar di Kg. Awat'), findsOneWidget);
     });
 
     testWidgets('the user can arrange them; that order is kept, and can be undone', (tester) async {
@@ -121,7 +124,7 @@ void main() {
 
     testWidgets('a river station opens its own details; "Change area" still works', (tester) async {
       await TestApp(followed: const ['JHR-AWAT']).start(tester);
-      expect(inCard('Details'), findsOneWidget);
+      expect(find.descendant(of: find.byType(AreaCard), matching: find.byIcon(Icons.chevron_right)), findsNothing); // whole card is the link
       await tapIt(tester, find.byKey(const ValueKey('area-card-JHR-AWAT')));
       expect(tester.widget<StationDetailScreen>(find.byType(StationDetailScreen)).stationId, 'JHR-AWAT');
       await tester.pageBack();

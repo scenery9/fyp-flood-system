@@ -52,6 +52,44 @@ def test_text_and_empty_input_do_not_crash():
     assert len(clean_readings(frame([]))) == 0
 
 
+# ML15 0.00 m glitches; levels below 0 are kept
+def test_isolated_zero_is_a_glitch_but_zero_with_the_tide_and_negatives_are_real():
+    t = pd.date_range("2026-11-19T22:00:00Z", periods=5, freq="15min")
+    raw = pd.concat([
+        pd.DataFrame({"station_id": "A", "time": t, "rainfall_mm": 0.0,
+                      "river_level_m": [42.86, 42.86, 0.0, 42.87, 42.86]}),      # glitch
+        pd.DataFrame({"station_id": "B", "time": t, "rainfall_mm": 0.0,
+                      "river_level_m": [0.11, 0.05, 0.0, -0.04, -0.10]}),        # tide passing 0
+        pd.DataFrame({"station_id": "C", "time": t, "rainfall_mm": 0.0,
+                      "river_level_m": [-1.77, -1.60, -1.40, -1.20, -1.11]}),    # below 0 all along
+    ])
+    from flood_ml.features import drop_zero_glitches
+    a = drop_zero_glitches(raw[raw.station_id == "A"].set_index("time")["river_level_m"])
+    assert a.isna().sum() == 1 and np.isnan(a.iloc[2])
+    b = drop_zero_glitches(raw[raw.station_id == "B"].set_index("time")["river_level_m"])
+    assert b.iloc[2] == 0.0
+    c = clean_readings(raw)
+    assert (c[c.station_id == "C"]["river_level_m"] < 0).all()
+    # hourly: A's 22:00 hour ends at 22:45 = 42.86, and no hour is pulled to 0
+    assert c[c.station_id == "A"]["river_level_m"].min() > 42
+
+
+def test_small_v_shaped_spike_to_zero_is_a_glitch_but_a_flat_low_tide_is_not():
+    from flood_ml.features import drop_zero_glitches
+    t = pd.to_datetime(["2026-11-22T16:10:00Z", "2026-11-22T16:25:00Z", "2026-11-22T16:40:00Z"])
+    assert np.isnan(drop_zero_glitches(pd.Series([0.21, 0.0, 0.20], index=t)).iloc[1])
+    assert drop_zero_glitches(pd.Series([0.05, 0.0, 0.06], index=t)).iloc[1] == 0.0  # low tide, near 0
+    assert drop_zero_glitches(pd.Series([0.11, 0.0, -0.10], index=t)).iloc[1] == 0.0  # crossing 0
+    hours = pd.to_datetime(["2026-11-22T14:00:00Z", "2026-11-22T16:00:00Z", "2026-11-22T18:00:00Z"])
+    assert drop_zero_glitches(pd.Series([0.25, 0.0, 0.28], index=hours)).iloc[1] == 0.0  # slow real low tide
+
+
+def test_zero_with_nothing_near_it_is_kept():
+    from flood_ml.features import drop_zero_glitches
+    s = pd.Series([5.0, 0.0], index=pd.to_datetime(["2026-11-19T10:00:00Z", "2026-11-19T22:00:00Z"]))
+    assert drop_zero_glitches(s).iloc[1] == 0.0
+
+
 # ML2 features and target
 def test_feature_values():
     c = clean_readings(frame([10.0, 10.5, 11.0, 12.0, 12.5, 13.0], rain=[1, 2, 3, 4, 5, 6]))
@@ -64,6 +102,21 @@ def test_feature_values():
     assert r["rain_sum_3h"] == 9
     assert np.isnan(r["rain_sum_6h"])  # not enough history yet
     assert f.iloc[5]["rain_sum_6h"] == 21
+
+
+# ML14 "same time one cycle ago" inputs (tide)
+def test_same_time_inputs_repeat_what_the_river_did_one_cycle_ago():
+    hours = np.arange(60)
+    levels = list(1.5 + 0.8 * np.sin(2 * np.pi * hours / 12))  # a 12-hour tide
+    f = build_features(clean_readings(frame(levels)), ST)
+    lv = np.array(levels)
+    t = 30
+    assert np.isclose(f["same_time_12h_ago"].iloc[t], lv[t - 9] - lv[t - 12])
+    assert np.isclose(f["same_time_25h_ago"].iloc[t], lv[t - 22] - lv[t - 25])
+    # with an exact 12-hour tide, one cycle ago predicts the next 3 hours exactly
+    assert np.isclose(f["same_time_12h_ago"].iloc[t], f[TARGET].iloc[t])
+    assert np.isnan(f["same_time_12h_ago"].iloc[11]) and np.isnan(f["same_time_25h_ago"].iloc[24])
+    assert not np.isnan(f["same_time_25h_ago"].iloc[25])
 
 
 def test_target_is_change_three_hours_ahead():
@@ -176,8 +229,12 @@ def test_bad_station_files_are_rejected():
 def test_station_files_in_the_project_are_valid():
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
-    for name in ("stations.json", "stations_klang.json"):
-        validate_stations(__import__("json").loads((root / name).read_text()))
+    files = {name: __import__("json").loads((root / name).read_text(encoding="utf-8"))
+             for name in ("stations.json", "stations_klang.json", "stations_training.json")}
+    for stations in files.values():
+        validate_stations(stations)
+    # the Selangor file keeps the Klang stations (with their upstream links) unchanged
+    assert files["stations_training.json"][:3] == files["stations_klang.json"]
 
 
 # ML8 straight-line baseline (the existing FloodWatch app's method)

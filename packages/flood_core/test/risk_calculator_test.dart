@@ -51,7 +51,9 @@ void main() {
       final s = assess(st('A'), r);
       expect(s.level, isNull);
       expect(s.rainfall, 2.0);
-      expect(s.mainCause, contains('no data'));
+      expect(s.mainCause, 'JPS shows the river sensor as offline');
+      expect(s.dataIssue, DataIssue.jpsProblem);
+      expect(s.problem, ReadingProblem.offline);
     });
     test('rainfall-only station has no level', () {
       final s = assess(st('A', thresholds: false), rd('A', rain: 65, river: 3));
@@ -91,6 +93,25 @@ void main() {
           closeTo(111.19, 0.05));
       expect(assess(st('A'), rd('A', river: 11), user: user).distanceKm, isNull);
       expect(assess(st('A', loc: GeoPoint(0, 101)), rd('A', river: 11)).distanceKm, isNull);
+    });
+  });
+
+  group('Reading freshness (live / delayed / stale)', () {
+    test('under 45 min is live', () {
+      expect(assess(st('A'), rd('A', river: 11, minAgo: 10)).freshness, Freshness.live);
+      expect(assess(st('A'), rd('A', river: 11, minAgo: 44)).freshness, Freshness.live);
+    });
+    test('45 min to 3 h is delayed, and still used for risk', () {
+      final s = assess(st('A'), rd('A', river: 11, minAgo: 45));
+      expect(s.freshness, Freshness.delayed);
+      expect(s.isActionable, isTrue);
+      expect(assess(st('A'), rd('A', river: 11, minAgo: 180)).freshness, Freshness.delayed);
+    });
+    test('over 3 h, or no reading, is stale and paused', () {
+      final s = assess(st('A'), rd('A', river: 11, minAgo: 181));
+      expect(s.freshness, Freshness.stale);
+      expect(s.isActionable, isFalse);
+      expect(assess(st('A'), null).freshness, Freshness.stale);
     });
   });
 }

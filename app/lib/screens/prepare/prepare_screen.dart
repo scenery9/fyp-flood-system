@@ -120,7 +120,8 @@ class _PrepareScreenState extends State<PrepareScreen> {
           ]),
         ),
         const SizedBox(height: kGap),
-        const Padding(padding: EdgeInsets.symmetric(horizontal: kMargin), child: WayOutCard()),
+        // SOS (call 999 / text a contact) is in the Danger checklist only.
+        Padding(padding: const EdgeInsets.symmetric(horizontal: kMargin), child: WayOutCard(showSos: level == RiskLevel.danger)),
         NoteText(context.tr('This checklist helps you prepare. It does not replace official warnings from JPS and NADMA.',
             'Senarai semak ini membantu anda bersedia. Ia tidak menggantikan amaran rasmi JPS dan NADMA.')),
       ],
@@ -230,11 +231,7 @@ class AdviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = RiskStyle.of(RiskLevel.danger);
-    final icon = item.call != null
-        ? Icons.call
-        : item.id == 'danger.water'
-            ? Icons.do_not_disturb_on
-            : Icons.stairs;
+    final icon = item.call != null ? Icons.call : Icons.info_outline;
     return Semantics(
       container: true,
       child: Container(
@@ -391,7 +388,10 @@ class HouseholdSummaryCard extends StatelessWidget {
 
 /// Nearest open centre and what to do with the household's transport.
 class WayOutCard extends StatelessWidget {
-  const WayOutCard({super.key});
+  const WayOutCard({super.key, this.showSos = false});
+
+  /// True on the Danger checklist: the SOS button is shown under the route.
+  final bool showSos;
 
   @override
   Widget build(BuildContext context) {
@@ -426,9 +426,9 @@ class WayOutCard extends StatelessWidget {
             icon: const Icon(Icons.directions),
             label: Text(context.tr('Show route', 'Tunjuk laluan', '显示路线')),
           ),
-          const SizedBox(height: kGap),
+          if (showSos) const SizedBox(height: kGap),
         ],
-        const SosButton(),
+        if (showSos) const SosButton(),
       ]),
     );
   }

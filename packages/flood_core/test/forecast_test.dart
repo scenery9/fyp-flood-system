@@ -157,6 +157,15 @@ void main() {
       expect(ForecastService.describeFactor(f('level_change_1h', 0.0, -0.02)),
           'River level unchanged in the last hour (lowers the forecast)');
     });
+    test('same time one cycle ago wording (tide)', () {
+      expect(ForecastService.describeFactor(f('same_time_12h_ago', 0.42, 0.3)),
+          '12 hours ago, the river rose 0.42 m over the next 3 hours (raises the forecast)');
+      expect(ForecastService.describeFactor(f('same_time_25h_ago', -0.6, -0.2)),
+          '25 hours ago, the river fell 0.60 m over the next 3 hours (lowers the forecast)');
+      expect(ForecastService.describeFactor(f('same_time_12h_ago', 0.001, 0.01)),
+          '12 hours ago, the river stayed the same over the next 3 hours (raises the forecast)');
+      expect(ForecastService.describeFactor(f('same_time_25h_ago', null, 0.1)), 'Other readings (raises the forecast)');
+    });
     test('level wording, and unknown or missing inputs', () {
       expect(ForecastService.describeFactor(f('level_above_normal', 1.87, -0.26)),
           'River is 1.87 m above its normal level (lowers the forecast)');

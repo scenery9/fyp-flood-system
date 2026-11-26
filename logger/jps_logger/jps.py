@@ -72,6 +72,30 @@ def river_level_rows(payload, now):
     return rows
 
 
+def river_level_problems(payload, now):
+    """{station code: problem} for each river station whose reading river_level_rows
+    skips, so the app can say why there is no new reading (supabase/reading_problems.sql)."""
+    out = {}
+    for s in payload.get("stations") or []:
+        code = (s.get("stationCode") or "").strip()
+        if not code:
+            continue
+        raw, at = s.get("waterLevel"), parse_time(s.get("lastUpdate"))
+        level = _number(raw)
+        if level is not None and level <= -9000:
+            out[code] = "offline"
+        elif level is not None and level <= FAULT_BELOW:
+            out[code] = "estimated"
+        elif level is None:
+            out[code] = "no_value"
+        elif at is None or (datetime.strptime(at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                            > now + MAX_CLOCK_AHEAD):
+            out[code] = "bad_time"
+        elif not _recent(at, now):
+            out[code] = "old_time"
+    return out
+
+
 def rainfall_rows(payload, now):
     """Rows for jps_rainfall. hourlyRainfall is a rolling 60-minute total and
     todayRainfall is the total since midnight; both are stored as given."""

@@ -9,3 +9,7 @@ ml/output/
 .venv/
 .env
 readings*.csv
+# Private notes (kept local only)
+docs/progress-report-1.md
+docs/daily-updates.md
+docs/report

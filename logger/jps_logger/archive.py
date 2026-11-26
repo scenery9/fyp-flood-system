@@ -4,9 +4,10 @@
     python -m jps_logger.archive cleanup      # delete archived days older than 30 days from Supabase
     python -m jps_logger.archive check-size   # warn at 300 MB, fail at 400 MB (free limit 500 MB)
 
-Days are Malaysia days (00:00-24:00, UTC+8). A day is archived once it is at least
-two days old: the logger never stores readings more than 24 hours old, so nothing
-can arrive for it later. A day is only deleted from Supabase if its archive file
+Days are Malaysia days (00:00-24:00, UTC+8). A day is archived the day after (as
+soon as it has ended). The logger stores readings up to 24 hours old, so a late
+reading for a day can still arrive the next day: the last two days are written
+again on every run, so they are complete once they are two days old. A day is only deleted from Supabase if its archive file
 exists, so a failed archive never loses data. Run in this order, committing the
 files in between (the GitHub workflow does this).
 """
@@ -23,7 +24,12 @@ from .jps import MYT
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 KEEP_DAYS = 30
-CLOSE_AFTER_DAYS = 2
+# Yesterday is archived as soon as it has ended. The logger still accepts readings
+# up to 24 hours old, so late ones for yesterday can arrive until the end of today:
+# the last OPEN_DAYS days are therefore written again on every run (the file is
+# written the same way each time, so git only sees a change when a reading came in).
+ARCHIVE_FROM_DAYS_AGO = 1
+OPEN_DAYS = 2
 WARN_MB, FAIL_MB = 300.0, 400.0
 COLUMNS = ["kind", "station_code", "observed_at", "level_m", "hourly_mm", "today_mm"]
 TABLES = {"level": ("jps_river_levels", "station_code,observed_at,level_m"),
@@ -88,12 +94,15 @@ def _first_day(store):
 
 
 def days_to_archive(first_day, today, root):
+    """Days up to yesterday that have no file yet, plus the last OPEN_DAYS days
+    (still open for late readings), which are written again."""
     if first_day is None:
         return []
-    last = today - timedelta(days=CLOSE_AFTER_DAYS)
+    last = today - timedelta(days=ARCHIVE_FROM_DAYS_AGO)
+    open_from = today - timedelta(days=OPEN_DAYS)
     days, d = [], first_day
     while d <= last:
-        if not archive_path(root, d).exists():
+        if d >= open_from or not archive_path(root, d).exists():
             days.append(d)
         d += timedelta(days=1)
     return days
@@ -106,10 +115,16 @@ def run_archive(store, root, today, out=print):
         span = [("observed_at", f"gte.{start}"), ("observed_at", f"lt.{end}")]
         levels = store.select_all(*TABLES["level"], span)
         rain = store.select_all(*TABLES["rain"], span)
-        n = write_day(archive_path(root, d), levels, rain)
-        out(f"Archived {d}: {n} readings")
-        written += 1
-    out(f"{written} day(s) archived")
+        path = archive_path(root, d)
+        before = path.read_bytes() if path.exists() else None
+        n = write_day(path, levels, rain)
+        if before is None:
+            out(f"Archived {d}: {n} readings")
+            written += 1
+        elif path.read_bytes() != before:
+            out(f"Updated {d} with late readings: {n} readings")
+            written += 1
+    out(f"{written} day(s) archived or updated")
     return 0
 
 

@@ -70,7 +70,9 @@ class LiveStationRepository implements StationRepository {
 
   /// The latest reading, or null when the station has none. The time is the
   /// river reading's time when there is one (it decides the risk level),
-  /// otherwise the rainfall time.
+  /// otherwise the rainfall time. A problem the logger saw after the last good
+  /// river reading (wl_problem, supabase/reading_problems.sql) comes with it, so
+  /// the app can say why there is no new level; an older problem is ignored.
   static StationReading? readingFromRow(Map<String, dynamic> r) {
     final code = '${r['station_code'] ?? ''}'.trim();
     final levelAt = DateTime.tryParse('${r['level_at'] ?? ''}');
@@ -78,13 +80,21 @@ class LiveStationRepository implements StationRepository {
     final level = _num(r['level_m']), rain = _num(r['hourly_mm']);
     final hasLevel = levelAt != null && level != null;
     final hasRain = rainAt != null && rain != null;
-    if (code.isEmpty || (!hasLevel && !hasRain)) return null;
+    var problem = ReadingProblem.parse(r['wl_problem']);
+    final problemAt = DateTime.tryParse('${r['wl_problem_at'] ?? ''}')?.toUtc();
+    if (problem != null && (problemAt == null || (hasLevel && !problemAt.isAfter(levelAt.toUtc())))) {
+      problem = null; // fixed since: a good reading came after it
+    }
+    if (code.isEmpty || (!hasLevel && !hasRain && problem == null)) return null;
     return StationReading.fromRaw(
       stationId: code,
-      time: (hasLevel ? levelAt : rainAt)!.toUtc(),
+      // No reading at all yet, only a problem: its time says how fresh that news is.
+      time: (hasLevel ? levelAt : (hasRain ? rainAt : problemAt))!.toUtc(),
       riverLevel: hasLevel ? level : null,
       rainfall: hasRain ? rain : null,
       rainfallTime: hasRain ? rainAt.toUtc() : null,
+      problem: problem,
+      problemAt: problem == null ? null : problemAt,
     );
   }
 

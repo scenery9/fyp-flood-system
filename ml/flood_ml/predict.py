@@ -1,10 +1,9 @@
 """Makes forecast.json: a 3-hour river level forecast per station, with the
-contribution of each input (SHAP values, computed exactly by XGBoost)."""
+contribution of each input (exact TreeSHAP values of the tree ensemble)."""
 import json
 import math
 
 import pandas as pd
-import xgboost as xgb
 
 from .features import FEATURES, HORIZON_H, build_features
 
@@ -24,8 +23,8 @@ def make_forecast(model, clean, stations, now, band_m, is_practice_data, model_v
         based_on = row["time"].iloc[0]
         if now - based_on > pd.Timedelta(hours=MAX_READING_AGE_H):
             continue  # reading too old: better no forecast than a wrong one
-        contrib = model.predict(xgb.DMatrix(row[FEATURES]), pred_contribs=True)[0]
-        change = float(contrib.sum())  # feature contributions + base value = prediction
+        contrib = model.contributions(row)[0]
+        change = float(contrib.sum())  # feature contributions + base value = prediction (exact TreeSHAP)
         level = float(row["river_level_m"].iloc[0])
         factors = [
             {
@@ -50,7 +49,8 @@ def make_forecast(model, clean, stations, now, band_m, is_practice_data, model_v
         "schema": 1,
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "horizon_hours": HORIZON_H,
-        "model": {"name": "xgboost", "version": model_version},
+        "model": {"name": "tree-ensemble", "version": model_version,
+                  "members": getattr(model, "describe", lambda: {})().get("weights", {})},
         "is_practice_data": bool(is_practice_data),
         "stations": entries,
     }

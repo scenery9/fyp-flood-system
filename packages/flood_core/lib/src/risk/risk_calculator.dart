@@ -66,12 +66,39 @@ class RiskCalculator {
       rainIntensity: RainIntensity.fromMm(reading?.rainfallMmPerHr),
       distanceKm: (userLocation != null && loc != null) ? distanceKm(userLocation, loc) : null,
       mainCause: _cause(reading, t, level, target, percent, isStale, age),
+      dataIssue: issueOf(reading, t, isStale),
     );
   }
+
+  /// Which plain message explains a missing or unusable river level. A JPS
+  /// problem comes first: it says why no newer reading arrived.
+  static DataIssue issueOf(StationReading? reading, Thresholds? t, bool isStale) {
+    if (reading == null) return DataIssue.noReading;
+    if (reading.problem != null) return DataIssue.jpsProblem;
+    if (isStale) return DataIssue.stale;
+    if (reading.riverLevelM == null) {
+      return t == null && reading.rainfallMmPerHr != null ? DataIssue.rainOnly : DataIssue.noRiverReading;
+    }
+    if (t == null) return DataIssue.noThresholds;
+    return DataIssue.none;
+  }
+
+  static String problemText(ReadingProblem p) => switch (p) {
+        ReadingProblem.offline => 'JPS shows the river sensor as offline',
+        ReadingProblem.estimated => 'JPS shows an estimated river level, not a measured one',
+        ReadingProblem.noValue => 'JPS shows no river level',
+        ReadingProblem.oldTime => 'JPS is still showing a river reading over a day old',
+        ReadingProblem.badTime => 'JPS shows a river reading with a wrong time',
+        ReadingProblem.glitch => 'JPS shows 0.00 m, which looks like an error',
+      };
 
   String _cause(StationReading? reading, Thresholds? t, RiskLevel? level,
       RiskLevel? target, double? percent, bool isStale, Duration? age) {
     if (reading == null) return 'No readings received yet';
+    if (reading.problem != null) {
+      final last = reading.riverLevelM == null ? '' : '; last good reading ${_ago(age!)} ago';
+      return '${problemText(reading.problem!)}$last';
+    }
     if (isStale) return 'Data is old (last update ${_ago(age!)} ago)';
     if (t == null) return 'Rainfall-only station (no river thresholds)';
     if (level == null) return 'River level sensor has no data';

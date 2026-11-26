@@ -35,5 +35,30 @@ Check on your laptop before pushing: `cd logger` then `python -m jps_logger.plac
 - A centre that still has people recorded is not removed; the run shows a warning instead.
 - Staff cannot change a place from these files in the app (name, position, capacity);
   change it here instead. Places staff add themselves (no code) are never touched by the upload.
-- Sources: the five centres are the ones the FloodWatch app showed in November 2026; their
-  capacities are FloodWatch's estimates, not official figures.
+- Sources:
+  - The five `PPS-SGR-…` / `PPS-MLK-…` centres are the ones the FloodWatch app showed in
+    November 2026. Their capacities are FloodWatch's estimates, not official figures.
+  - The `PPS-JKM-…` centres are real JKM relief centres (PPS) from the public map of
+    JKM's InfoBencana portal (infobencanajkmv2.jkm.gov.my). Name, district and position
+    are JKM's. The capacity is worked out from JKM's figures: JKM shows how full a centre
+    is as a percentage, so capacity = evacuees × 100 ÷ percentage.
+
+## Adding JKM's relief centres
+
+JKM publishes only the PPS that are **open now**. Its full register (about 1,170 in
+Selangor) is in JKM's staff system and is not public. So run this whenever there are
+floods; each run adds the centres JKM has opened since the last one:
+
+    cd logger
+    python -m jps_logger.jkm_pps --dry-run   # see what would change
+    python -m jps_logger.jkm_pps             # update places/centres.csv
+    python -m jps_logger.places check
+
+- A centre stays in the file after it closes, because it is still a PPS.
+- A centre JKM lists again keeps its row, since the code is JKM's id.
+- A JKM position with fewer than 4 decimals (about 1 km out) gets `location_checked = no`.
+  Check it on a map and set it to `yes`.
+- A JKM centre whose name is already in the file (e.g. one added by hand) is skipped and
+  reported, so a centre is never listed twice.
+
+Then commit and push `places/centres.csv` as usual.

@@ -161,10 +161,11 @@ void main() {
     testWidgets('a rain-only station shows the rain, not "No recent data"', (tester) async {
       await TestApp(followed: const ['MLK-DURIAN']).start(tester); // 65 mm/h, no river gauge
       Finder inCard(String text) => find.descendant(of: find.byType(AreaCard), matching: find.text(text));
-      expect(inCard('Very heavy rain'), findsOneWidget);
-      expect(inCard('Rain gauge only, no river reading'), findsOneWidget);
+      expect(inCard('Very heavy'), findsOneWidget); // rain pill
       expect(inCard('65.0 mm/h'), findsOneWidget);
+      expect(inCard('No river gauge nearby'), findsOneWidget); // river tile says why it is empty
       expect(inCard('No recent data'), findsNothing);
+      expect(find.byKey(const ValueKey('amber-banner')), findsNothing); // fresh rain: no warning
     });
   });
 }
@@ -174,24 +175,40 @@ void tp98() {
   group('TP98 River water and rain on the area card', () {
     Finder inCard(String text) => find.descendant(of: find.byType(AreaCard), matching: find.text(text));
 
-    testWidgets('the river reading is labelled, with the station\'s own rain band', (tester) async {
+    Finder inTile(String tile, String text) =>
+        find.descendant(of: find.byKey(ValueKey('tile-$tile')), matching: find.text(text));
+
+    testWidgets('River level and Rainfall side by side, each with its own pill', (tester) async {
       await TestApp(followed: const ['JHR-AWAT']).start(tester); // 19.97 m, 12.0 mm/h
-      expect(inCard('River water: '), findsOneWidget);
-      expect(inCard('19.97 m'), findsOneWidget);
-      expect(inCard('Rain: Moderate rain · 12.0 mm/h'), findsOneWidget);
-      expect(inCard('Rain gauge at this station'), findsOneWidget);
+      expect(inTile('river', 'River level'), findsOneWidget);
+      expect(inTile('river', '19.97 m'), findsOneWidget);
+      expect(inTile('rain', 'Rainfall'), findsOneWidget);
+      expect(inTile('rain', '12.0 mm/h'), findsOneWidget);
+      expect(inTile('rain', 'Moderate'), findsOneWidget);
+      expect(inTile('rain', 'At this station'), findsOneWidget);
+      // same row, equal width
+      final river = tester.getRect(find.byKey(const ValueKey('tile-river')));
+      final rain = tester.getRect(find.byKey(const ValueKey('tile-rain')));
+      expect(river.top, rain.top);
+      expect(river.width, closeTo(rain.width, 0.5));
+      // footer: when, and where the data is from; no arrow icon
+      expect(find.descendant(of: find.byType(AreaCard), matching: find.textContaining(RegExp(r'^Updated since \d\d:\d\d \('))),
+          findsOneWidget);
+      expect(inCard('Sample data'), findsOneWidget);
+      expect(find.descendant(of: find.byType(AreaCard), matching: find.byIcon(Icons.chevron_right)), findsNothing);
     });
 
-    testWidgets('0 mm is "No rain now"', (tester) async {
+    testWidgets('0 mm is "No rain"', (tester) async {
       await TestApp(followed: const ['SGR-KAJANG']).start(tester);
-      expect(inCard('Rain: No rain now · 0.0 mm/h'), findsOneWidget);
+      expect(inTile('rain', '0.0 mm/h'), findsOneWidget);
+      expect(inTile('rain', 'No rain'), findsOneWidget);
     });
 
     testWidgets('arrows sit under the card and still change area', (tester) async {
       await TestApp().start(tester);
       expect(find.descendant(of: find.byType(AreaCard), matching: find.bySemanticsLabel('Next area')), findsNothing);
       await tapIt(tester, find.bySemanticsLabel('Next area'));
-      expect(inCard('Sg. Muar di Buloh Kasap'), findsOneWidget);
+      expect(find.descendant(of: find.byType(AreaCard), matching: find.textContaining('Sg. Muar di Buloh Kasap')), findsOneWidget);
     });
   });
 }

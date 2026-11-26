@@ -141,6 +141,13 @@ def river_level_rows(stations, now):
     return jps.river_level_rows(payload, now)
 
 
+def river_level_problems(stations, now):
+    """Why a river station's reading is skipped (see jps.river_level_problems)."""
+    payload = {"stations": [{"stationCode": s["code"], "lastUpdate": s["time"], "waterLevel": s["level"]}
+                            for s in stations]}
+    return jps.river_level_problems(payload, now)
+
+
 def rainfall_rows(stations, now):
     payload = {"stations": [{"stationCode": s["code"], "lastUpdate": s["time"],
                              "hourlyRainfall": s["hourly"], "todayRainfall": s["today"]} for s in stations]}

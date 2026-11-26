@@ -10,7 +10,9 @@ from jps_logger.store import Store
 def test_the_files_in_the_repository_are_valid():
     points, centres = places.load()
     assert centres and points
-    assert all(c["location_checked"] for c in centres)  # the five from the FloodWatch app
+    # the five from the FloodWatch app were checked on a map; JKM centres only when JKM's position is precise
+    assert all(c["location_checked"] for c in centres if not c["code"].startswith("PPS-JKM-"))
+    assert any(c["code"].startswith("PPS-JKM-") for c in centres)
     assert {c["district"] for c in centres} >= {"KLANG", "MELAKA TENGAH"}
 
 

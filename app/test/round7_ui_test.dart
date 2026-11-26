@@ -198,17 +198,26 @@ void main() {
       expect(p.powerMachine, isTrue);
     });
 
-    testWidgets('Danger: safety tips are cards, not ticks; Call 999 opens the phone app in one tap', (tester) async {
+    testWidgets('Danger: one safety card (cautions in its text), not ticks; Call 999 opens the phone app in one tap', (tester) async {
       final app = TestApp();
       await app.start(tester);
       await openTab(tester, 'Prepare');
-      for (final id in ['danger.call', 'danger.water', 'danger.high']) {
-        await reveal(tester, find.byKey(ValueKey('advice-$id')));
-        expect(find.byKey(ValueKey('advice-$id')), findsOneWidget);
-        expect(find.byKey(ValueKey('tick-$id')), findsNothing);
-      }
+      await reveal(tester, find.byKey(const ValueKey('advice-danger.call')));
+      expect(find.byKey(const ValueKey('tick-danger.call')), findsNothing);
+      expect(find.byKey(const ValueKey('advice-danger.water')), findsNothing);
+      expect(find.byKey(const ValueKey('advice-danger.high')), findsNothing);
+      expect(find.descendant(of: find.byKey(const ValueKey('advice-danger.call')), matching: find.textContaining('Do not walk or drive through flood water')),
+          findsOneWidget);
       await tapIt(tester, find.byKey(const ValueKey('advice-call-999')));
       expect(app.opener.opened.first.toString(), 'tel:999');
+    });
+
+    testWidgets('Normal: the go-bag item uses the same "What to bring" list', (tester) async {
+      await TestApp().start(tester);
+      await openTab(tester, 'Prepare');
+      await tapIt(tester, find.text('Normal').last);
+      await reveal(tester, find.byKey(const ValueKey('bring-normal.gobag')));
+      expect(find.text('What to bring'), findsOneWidget);
     });
 
     testWidgets('Warning: the go-bag item lists what to bring', (tester) async {
@@ -245,6 +254,44 @@ void main() {
       await tapIt(tester, find.text('River'));
       await tapIt(tester, find.byKey(const ValueKey('star-JHR-BULOH')));
       expect(await app.followedStore.load(), ['JHR-AWAT', 'JHR-BULOH']);
+    });
+
+    testWidgets('drag a station card right: Save / Remove on the left edge', (tester) async {
+      final app = TestApp(followed: const ['JHR-AWAT']);
+      await app.start(tester);
+      await openTab(tester, 'Centres');
+      await tapIt(tester, find.text('River'));
+      final card = find.byKey(const ValueKey('station-card-JHR-BULOH'));
+      await reveal(tester, card);
+      final width = tester.getSize(card).width;
+
+      // Past 45% of the width: saved at once, and the card slides back.
+      await tester.drag(card, Offset(width * 0.6, 0));
+      await tester.pumpAndSettle();
+      expect(await app.followedStore.load(), ['JHR-AWAT', 'JHR-BULOH']);
+      expect(find.byKey(const ValueKey('swipe-action-JHR-BULOH')), findsNothing);
+
+      // A short drag leaves the drawer open: "Remove" (white text, no icon), star hidden.
+      await tester.drag(card, const Offset(80, 0));
+      await tester.pumpAndSettle();
+      final drawer = find.byKey(const ValueKey('swipe-action-JHR-BULOH'));
+      expect(find.descendant(of: drawer, matching: find.text('Remove')), findsOneWidget);
+      expect(find.descendant(of: drawer, matching: find.byType(Icon)), findsNothing);
+      expect(tester.widget<Text>(find.descendant(of: drawer, matching: find.text('Remove'))).style!.color, Colors.white);
+      expect(tester.widget<IgnorePointer>(find.ancestor(of: find.byKey(const ValueKey('star-JHR-BULOH')), matching: find.byType(IgnorePointer)).first).ignoring,
+          isTrue);
+      // Tapping the card body only closes the drawer (does not open the station).
+      await tester.tap(find.descendant(of: card, matching: find.text('Sg. Muar di Buloh Kasap')));
+      await tester.pumpAndSettle();
+      expect(drawer, findsNothing);
+      expect(find.text('River levels now'), findsOneWidget); // still on Centres
+
+      // Open again and tap Remove.
+      await tester.drag(card, const Offset(80, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(of: drawer, matching: find.text('Remove')));
+      await tester.pumpAndSettle();
+      expect(await app.followedStore.load(), ['JHR-AWAT']);
     });
   });
 

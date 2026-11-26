@@ -120,7 +120,7 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
               Text('${s.station.district}, ${s.station.state}', style: context.text.bodyMedium),
               const SizedBox(height: 12),
               RiskBadge(known ? s.level : null,
-                  label: known ? null : (s.isStale ? context.tr('Old data', 'Data lama') : context.tr('No river data', 'Tiada data sungai'))),
+                  label: known ? null : (dataIssueLabel(context, s) ?? context.tr('No river data', 'Tiada data sungai', '没有河流数据'))),
               const SizedBox(height: 12),
               _Line(context.tr('River level', 'Paras sungai'), s.riverLevel == null ? '—' : metres(s.riverLevel!)),
               if (s.percentToTarget != null && s.targetLevel != null && s.level != RiskLevel.danger)
@@ -130,7 +130,7 @@ class _StationDetailScreenState extends State<StationDetailScreen> {
               _Line(context.tr('Rainfall', 'Hujan'), s.rainfall == null ? '—' : '${s.rainfall!.toStringAsFixed(1)} mm/h'),
               _Line(context.tr('Updated', 'Dikemas kini'), formatAge(context, s.age)),
               const SizedBox(height: 8),
-              Text(s.mainCause, style: context.text.bodyMedium),
+              Text(dataIssueText(context, s) ?? s.mainCause, key: const ValueKey('station-cause'), style: context.text.bodyMedium),
             ]),
           ),
         ),

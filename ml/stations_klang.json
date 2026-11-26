@@ -1,5 +1,5 @@
 [
-  {"id": "BKLG0002L", "name": "TAMAN SRI MUDA", "river": "Sg. Klang", "district": "KLANG", "normal": 2.8, "alert": 4.4, "warning": 4.7, "danger": 5.0, "upstream": ["BPTL0004L", "BPTL0061L"]},
-  {"id": "BPTL0004L", "name": "PUCHONG DROP", "river": "Sg. Klang", "district": "PETALING", "normal": 7.5, "alert": 9.0, "warning": 9.5, "danger": 10.0},
-  {"id": "BPTL0061L", "name": "USJ 1", "river": "Sg. Klang", "district": "PETALING", "normal": 7.2, "alert": 11.4, "warning": 11.7, "danger": 12.0}
+  {"id": "BKLG0002L", "name": "TAMAN SRI MUDA", "state": "Selangor", "river": "Sg. Klang", "district": "KLANG", "normal": 2.8, "alert": 4.4, "warning": 4.7, "danger": 5.0, "upstream": ["BPTL0004L", "BPTL0061L"]},
+  {"id": "BPTL0004L", "name": "PUCHONG DROP", "state": "Selangor", "river": "Sg. Klang", "district": "PETALING", "normal": 7.5, "alert": 9.0, "warning": 9.5, "danger": 10.0},
+  {"id": "BPTL0061L", "name": "USJ 1", "state": "Selangor", "river": "Sg. Klang", "district": "PETALING", "normal": 7.2, "alert": 11.4, "warning": 11.7, "danger": 12.0}
 ]

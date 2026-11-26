@@ -198,6 +198,8 @@ class _Pin extends StatelessWidget {
               decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.9), borderRadius: BorderRadius.circular(4)),
               child: Text(pin.text!,
                   maxLines: 1,
+                  // Fixed size: the marker box is fixed (screen readers get the full label).
+                  textScaler: TextScaler.noScaling,
                   style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF111418), fontFeatures: AppText.tabular)),
             ),
         ]),

@@ -245,6 +245,13 @@ class ForecastService {
     'up_level_change_3h': 'the last 3 hours',
   };
 
+  /// What the river did in the 3 hours after the same moment one cycle ago
+  /// (12 h: about one tide; 25 h: about one day).
+  static const Map<String, int> _cycleHours = {
+    'same_time_12h_ago': 12,
+    'same_time_25h_ago': 25,
+  };
+
   static bool isUpstreamInput(String feature) =>
       _upRainWindows.containsKey(feature) || _upChangeWindows.containsKey(feature);
 
@@ -271,6 +278,11 @@ class ForecastService {
       what = v.abs() < 0.005
           ? 'River level unchanged in ${_changeWindows[f.feature]}'
           : 'River ${v > 0 ? 'rose' : 'fell'} ${v.abs().toStringAsFixed(2)} m in ${_changeWindows[f.feature]}';
+    } else if (_cycleHours.containsKey(f.feature) && v != null) {
+      final h = _cycleHours[f.feature];
+      what = v.abs() < 0.005
+          ? '$h hours ago, the river stayed the same over the next 3 hours'
+          : '$h hours ago, the river ${v > 0 ? 'rose' : 'fell'} ${v.abs().toStringAsFixed(2)} m over the next 3 hours';
     } else if (f.feature == 'level_above_normal' && v != null) {
       what = 'River is ${v.abs().toStringAsFixed(2)} m ${v >= 0 ? 'above' : 'below'} its normal level';
     } else {

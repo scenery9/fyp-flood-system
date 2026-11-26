@@ -233,8 +233,19 @@ void main() {
       final danger = prep.checklist(RiskLevel.danger, null);
       expect(danger.any((i) => i.advice), isFalse);
       final advice = prep.advice(RiskLevel.danger, null);
-      expect([for (final a in advice) a.id], ['danger.call', 'danger.water', 'danger.high']);
+      // One advice card: the flood-water cautions are in its text, not separate cards.
+      expect([for (final a in advice) a.id], ['danger.call']);
       expect(advice.first.call, '999');
+      expect(advice.first.howTo, contains('Do not walk or drive through flood water'));
+      expect(advice.first.howTo, contains('highest floor'));
+      for (final l in AppLanguage.values) {
+        expect(prep.advice(RiskLevel.danger, null, language: l), hasLength(1));
+      }
+      // Normal go-bag uses the same household "What to bring" list as Warning.
+      const baby = HouseholdProfile(people: 2, adults: 1, babies: 1);
+      final normalBag = prep.checklist(RiskLevel.normal, baby).firstWhere((i) => i.id == 'normal.gobag');
+      expect(normalBag.bring, prep.checklist(RiskLevel.warning, baby).firstWhere((i) => i.id == 'warning.bag').bring);
+      expect(normalBag.bring, contains('Milk, bottles and nappies for the baby'));
       final bag = prep.checklist(RiskLevel.warning, const HouseholdProfile(people: 3, babies: 1, powerMachine: true, pets: 1))
           .firstWhere((i) => i.id == 'warning.bag');
       expect(bag.bring, contains('Milk, bottles and nappies for the baby'));

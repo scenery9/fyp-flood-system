@@ -33,6 +33,6 @@ def clean(raw):
 @pytest.fixture(scope="session")
 def trained(clean, stations):
     train, test, cutoff = time_split(build_features(clean, stations))
-    model = train_model(train)
+    model = train_model(train, fast=True)  # smaller ensemble, same code path
     return {"model": model, "train": train, "test": test, "cutoff": cutoff,
             "metrics": evaluate(model, test, stations)}

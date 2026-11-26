@@ -78,10 +78,10 @@ class PreparednessService {
       _ms: 'Sediakan beg kecemasan',
       _zh: '准备紧急包',
     }, {
-      _en: 'IC and documents in a waterproof bag, cash, phone charger, torch, water and clothes for 3 days.',
-      _ms: 'IC dan dokumen dalam beg kalis air, wang tunai, pengecas telefon, lampu suluh, air dan pakaian untuk 3 hari.',
-      _zh: '把身份证和文件放进防水袋，另备现金、手机充电器、手电筒、饮用水和3天的衣物。',
-    }),
+      _en: 'Pack it now and keep it by the door, so you can grab it and go. The list below is made for your household.',
+      _ms: 'Sediakan sekarang dan letak dekat pintu supaya boleh terus dibawa. Senarai di bawah disesuaikan untuk isi rumah anda.',
+      _zh: '现在就准备好并放在门边，以便随手带走。下面的清单是按您的家庭定制的。',
+    }, bring: true),
     _Def('normal.centre', RiskLevel.normal, {
       _en: 'Know your nearest relief centre',
       _ms: 'Ketahui pusat pemindahan terdekat',
@@ -300,28 +300,18 @@ class PreparednessService {
       _ms: 'Jika tidak dapat keluar, hubungi 999',
       _zh: '如果无法离开，请拨打999',
     }, {
-      _en: 'Say your address, how many people, and who needs help.',
-      _ms: 'Beritahu alamat, bilangan orang, dan siapa yang perlukan bantuan.',
-      _zh: '说明地址、人数以及谁需要帮助。',
+      // The only advice card at Danger: the two flood-water cautions are part
+      // of it, not separate banners.
+      _en: 'Say your address, how many people, and who needs help. '
+          'Do not walk or drive through flood water: fast water 15 cm deep can knock a person down. '
+          'If you are trapped, go to the highest floor with your phone and wait for rescue. Do not go into a closed attic.',
+      _ms: 'Beritahu alamat, bilangan orang, dan siapa yang perlukan bantuan. '
+          'Jangan meredah air banjir: air deras sedalam 15 cm boleh menjatuhkan seseorang. '
+          'Jika terperangkap, naik ke tingkat paling atas dengan telefon dan tunggu bantuan. Jangan masuk ke loteng tertutup.',
+      _zh: '说明地址、人数以及谁需要帮助。'
+          '切勿涉水步行或驾车：15厘米深的急流就能把人冲倒。'
+          '如果被困，带上手机前往最高楼层等待救援。不要进入封闭的阁楼。',
     }, advice: true, call: '999'),
-    _Def('danger.water', RiskLevel.danger, {
-      _en: 'Do not walk or drive through flood water',
-      _ms: 'Jangan meredah air banjir',
-      _zh: '切勿涉水步行或驾车',
-    }, {
-      _en: 'Fast water 15 cm deep can knock a person down.',
-      _ms: 'Air deras sedalam 15 cm boleh menjatuhkan seseorang.',
-      _zh: '15厘米深的急流就能把人冲倒。',
-    }, advice: true),
-    _Def('danger.high', RiskLevel.danger, {
-      _en: 'If trapped, go to the highest floor',
-      _ms: 'Jika terperangkap, naik ke tingkat paling atas',
-      _zh: '如果被困，前往最高楼层',
-    }, {
-      _en: 'Take your phone and wait for rescue. Do not go into a closed attic.',
-      _ms: 'Bawa telefon dan tunggu bantuan. Jangan masuk ke loteng tertutup.',
-      _zh: '带上手机等待救援。不要进入封闭的阁楼。',
-    }, advice: true),
   ];
 
   /// Go-bag contents for everyone, then for this household's needs.

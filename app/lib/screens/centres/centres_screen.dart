@@ -475,9 +475,41 @@ List<StationStatus> _pick(List<StationStatus> all, ListSort sort, double? within
     const StationListService().apply(all,
         mode: mode, sortBy: sort == ListSort.nearMe ? SortBy.nearest : SortBy.highestRisk, withinKm: withinKm);
 
-/// "3.9 km · 2 min ago" (distance only when known).
-String _where(BuildContext context, StationStatus s) =>
-    [if (s.distanceKm != null) '${s.distanceKm!.toStringAsFixed(1)} km', formatAge(context, s.age)].join(' · ');
+/// Save or unsave a station, with the "up to N areas" message at the limit.
+Future<void> toggleSaved(BuildContext context, String stationId) async {
+  final app = AppScope.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final limit = context.tr('You can save up to ${FollowedAreasService.maxAreas} areas. Remove one first.',
+      'Anda boleh simpan sehingga ${FollowedAreasService.maxAreas} kawasan. Buang satu dahulu.',
+      '最多只能保存 ${FollowedAreasService.maxAreas} 个地区，请先移除一个。');
+  if (app.isSaved(stationId)) {
+    await app.unfollow(stationId);
+  } else if (await app.follow(stationId) == FollowError.limit) {
+    messenger.showSnackBar(SnackBar(content: Text(limit)));
+  }
+}
+
+/// "River levels now" on the left, "Nearest first" on the right, above the cards.
+class _ListHeader extends StatelessWidget {
+  const _ListHeader({required this.title, required this.order});
+  final String title;
+  final String order;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF475569))),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(order, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+        ]),
+      );
+}
 
 class _RainList extends StatelessWidget {
   const _RainList({required this.statuses, required this.sort, required this.withinKm});
@@ -488,29 +520,38 @@ class _RainList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final list = _pick([for (final s in statuses) if (s.rainfall != null) s], sort, withinKm, ListMode.rainfall);
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        CardLabel(sort == ListSort.nearMe
-            ? context.tr('Rain gauges · nearest first', 'Tolok hujan · paling dekat dahulu', '雨量站 · 由近到远')
-            : context.tr('Rain gauges · heaviest first', 'Tolok hujan · paling lebat dahulu')),
-        if (list.isEmpty) _NoneNear(withinKm: withinKm),
-        for (var i = 0; i < list.length; i++)
-          _StationRow(
-            status: list[i],
-            badge: Icon(Icons.water_drop, color: _CentresScreenState._rainColor(list[i].rainIntensity)),
-            value: '${list[i].rainfall!.toStringAsFixed(1)} mm/h · ${_CentresScreenState._rainName(context, list[i].rainIntensity)}'
-                '${list[i].isStale ? ' · ${context.tr('old data', 'data lama')}' : ''}',
-            detail: _where(context, list[i]),
-            last: i == list.length - 1,
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _ListHeader(
+        title: context.tr('Rainfall now', 'Hujan kini', '当前雨量'),
+        order: sort == ListSort.nearMe
+            ? context.tr('Nearest first', 'Paling dekat dahulu', '由近到远')
+            : context.tr('Heaviest first', 'Paling lebat dahulu', '雨量最大优先'),
+      ),
+      if (list.isEmpty) AppCard(child: _NoneNear(withinKm: withinKm)),
+      for (var i = 0; i < list.length; i++) ...[
+        if (i > 0) const SizedBox(height: 8),
+        StationTelemetryCard(
+          status: list[i],
+          value: '${list[i].rainfall!.toStringAsFixed(1)} mm/h',
+          pill: StatusPill(
+            text: _CentresScreenState._rainName(context, list[i].rainIntensity),
+            color: const Color(0xFF1F4E9A),
+            tint: const Color(0xFFE6EFFB),
+            icon: Icons.water_drop,
+            iconColor: _CentresScreenState._rainColor(list[i].rainIntensity),
+            fontSize: 13,
           ),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Text(context.tr('Latest gauge readings. Tap a gauge for more. MET Malaysia rain forecasts are not connected yet.',
-              'Bacaan tolok terkini. Ketik tolok untuk maklumat lanjut. Ramalan hujan MET Malaysia belum disambungkan.'), style: context.text.bodyMedium),
         ),
-      ]),
-    );
+      ],
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+        child: Text(
+            context.tr('Latest gauge readings. Tap a gauge for more, or drag a card right to save it. MET Malaysia rain forecasts are not connected yet.',
+                'Bacaan tolok terkini. Ketik tolok untuk maklumat lanjut, atau seret kad ke kanan untuk menyimpannya. Ramalan hujan MET Malaysia belum disambungkan.',
+                '最新雨量读数。点击测站查看更多，或向右拖动卡片以保存。尚未接入马来西亚气象局的降雨预报。'),
+            style: context.text.bodyMedium),
+      ),
+    ]);
   }
 }
 
@@ -524,39 +565,46 @@ class _RiverList extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
     final list = _pick([for (final s in statuses) if (s.station.thresholds != null) s], sort, withinKm, ListMode.riverLevel);
-    return AppCard(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        CardLabel(sort == ListSort.nearMe
-            ? context.tr('River levels now · nearest first', 'Paras sungai kini · paling dekat dahulu', '当前河流水位 · 由近到远')
-            : context.tr('River levels now · highest risk first', 'Paras sungai kini · risiko tertinggi dahulu', '当前河流水位 · 风险最高优先')),
-        if (list.isEmpty) _NoneNear(withinKm: withinKm),
-        for (var i = 0; i < list.length; i++)
-          Builder(builder: (context) {
-            final s = list[i];
-            final f = app.forecastFor(s.station.id);
-            // Arrow from the AI forecast, kept on the same line as the number.
-            final arrow = switch (f?.trend) { Trend.rising => '\u00A0↑', Trend.falling => '\u00A0↓', _ => '' };
-            return _StationRow(
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _ListHeader(
+        title: context.tr('River levels now', 'Paras sungai kini', '当前河流水位'),
+        order: sort == ListSort.nearMe
+            ? context.tr('Nearest first', 'Paling dekat dahulu', '由近到远')
+            : context.tr('Highest risk first', 'Risiko tertinggi dahulu', '风险最高优先'),
+      ),
+      if (list.isEmpty) AppCard(child: _NoneNear(withinKm: withinKm)),
+      for (var i = 0; i < list.length; i++)
+        Builder(builder: (context) {
+          final s = list[i];
+          final f = app.forecastFor(s.station.id);
+          // Arrow from the AI forecast, kept on the same line as the number.
+          final arrow = switch (f?.trend) { Trend.rising => ' ↑', Trend.falling => ' ↓', _ => '' };
+          final st = RiskStyle.of(s.isActionable ? s.level : null);
+          return Padding(
+            padding: EdgeInsets.only(top: i == 0 ? 0 : 8),
+            child: StationTelemetryCard(
               status: s,
-              badge: RiskBadge(s.isActionable ? s.level : null),
-              value: s.riverLevel == null ? '—' : '${metres(s.riverLevel!).replaceAll(' ', '\u00A0')}$arrow',
-              detail: _where(context, s),
-              towards: s.isActionable ? towardsText(context, s) : null,
-              percent: s.isActionable ? (s.level == RiskLevel.danger ? 100 : s.percentToTarget) : null,
-              last: i == list.length - 1,
-            );
-          }),
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Text(
-              context.tr('↑ rising, ↓ falling in the next 3 hours (AI forecast). Tap a station for the forecast and more.',
-                  '↑ naik, ↓ turun dalam 3 jam akan datang (ramalan AI). Ketik stesen untuk ramalan dan maklumat lanjut.',
-                  '↑ 上涨，↓ 下降（未来3小时AI预测）。点击测站查看预测和更多信息。'),
-              style: context.text.bodyMedium),
-        ),
-      ]),
-    );
+              value: s.riverLevel == null ? '—' : '${metres(s.riverLevel!).replaceAll(' ', ' ')}$arrow',
+              // No usable level: say why in the pill ("Not updated", "Invalid reading").
+              pill: StatusPill(
+                text: s.isActionable ? context.levelName(s.level) : (dataIssueLabel(context, s) ?? context.levelName(null)),
+                color: st.onTint,
+                tint: st.tint,
+                icon: st.icon,
+                fontSize: 13,
+              ),
+            ),
+          );
+        }),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(4, 12, 4, 0),
+        child: Text(
+            context.tr('↑ rising, ↓ falling in the next 3 hours (AI forecast). Tap a station for its JPS levels and forecast, or drag a card right to save it.',
+                '↑ naik, ↓ turun dalam 3 jam akan datang (ramalan AI). Ketik stesen untuk paras JPS dan ramalan, atau seret kad ke kanan untuk menyimpannya.',
+                '↑ 上涨，↓ 下降（未来3小时AI预测）。点击测站查看 JPS 警戒线和预测，或向右拖动卡片以保存。'),
+            style: context.text.bodyMedium),
+      ),
+    ]);
   }
 }
 
@@ -564,132 +612,225 @@ class _NoneNear extends StatelessWidget {
   const _NoneNear({required this.withinKm});
   final double? withinKm;
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(
-            withinKm == null
-                ? context.tr('No stations.', 'Tiada stesen.', '没有测站。')
-                : context.tr('No stations within ${withinKm!.toStringAsFixed(0)} km. Choose a bigger distance.',
-                    'Tiada stesen dalam ${withinKm!.toStringAsFixed(0)} km. Pilih jarak yang lebih jauh.',
-                    '${withinKm!.toStringAsFixed(0)} 公里内没有测站，请选择更大的范围。'),
-            style: context.text.bodyLarge),
-      );
+  Widget build(BuildContext context) => Text(
+      withinKm == null
+          ? context.tr('No stations.', 'Tiada stesen.', '没有测站。')
+          : context.tr('No stations within ${withinKm!.toStringAsFixed(0)} km. Choose a bigger distance.',
+              'Tiada stesen dalam ${withinKm!.toStringAsFixed(0)} km. Pilih jarak yang lebih jauh.',
+              '${withinKm!.toStringAsFixed(0)} 公里内没有测站，请选择更大的范围。'),
+      style: context.text.bodyLarge);
 }
 
-/// One station in the River or Rain list, kept short: name on its own line,
-/// then status and reading, then distance and age, and (rivers) how close it
-/// is to the next JPS line. Everything else is on the station page.
-class _StationRow extends StatelessWidget {
-  const _StationRow({
-    required this.status,
-    required this.badge,
-    required this.value,
-    required this.last,
-    this.detail,
-    this.towards,
-    this.percent,
-  });
+/// One station in the River or Rain list, three rows:
+///   name ............................ 0.8 km
+///   0.35 m  [Normal]                  ☆  ›
+///   Updated since 20:21 (11 min ago)
+/// How close it is to the next JPS line, and today's details, are on the
+/// station page. Drag the card right to show Save (or Remove) at the left
+/// edge; drag past 45% of the width, or tap Save, to save it.
+class StationTelemetryCard extends StatefulWidget {
+  const StationTelemetryCard({super.key, required this.status, required this.value, required this.pill});
   final StationStatus status;
-  final Widget badge;
 
-  /// "19.97 m ↑" or "35.0 mm/h · Heavy".
+  /// "0.35 m ↑" or "14.5 mm/h".
   final String value;
-  final bool last;
+  final Widget pill;
 
-  /// "3.9 km · 2 min ago".
-  final String? detail;
+  @override
+  State<StationTelemetryCard> createState() => _StationTelemetryCardState();
+}
 
-  /// "91% to Warning (8.20 m)", with a bar from [percent] (0-100).
-  final String? towards;
-  final double? percent;
+class _StationTelemetryCardState extends State<StationTelemetryCard> with SingleTickerProviderStateMixin {
+  /// Drawer width when left open after a short drag.
+  static const double _drawer = 96;
+
+  /// How far the card has moved right, in pixels.
+  late final AnimationController _offset = AnimationController(vsync: this, lowerBound: 0, upperBound: 10000, value: 0);
+  double _width = 1;
+
+  @override
+  void dispose() {
+    _offset.dispose();
+    super.dispose();
+  }
+
+  void _moveTo(double px) {
+    if (MediaQuery.of(context).disableAnimations) {
+      _offset.value = px;
+    } else {
+      _offset.animateTo(px, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+    }
+  }
+
+  Future<void> _toggle() async {
+    _moveTo(0);
+    await toggleSaved(context, widget.status.station.id);
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    // Only a drag to the right opens it; dragging back left closes it.
+    if (_offset.value == 0 && d.delta.dx <= 0) return;
+    _offset.value = (_offset.value + d.delta.dx).clamp(0.0, _width);
+  }
+
+  void _dragEnd(DragEndDetails d) {
+    final x = _offset.value;
+    if (x >= _width * 0.45) {
+      _toggle();
+    } else if (x >= _drawer / 2 && (d.primaryVelocity ?? 0) >= 0) {
+      _moveTo(_drawer);
+    } else {
+      _moveTo(0);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final app = AppScope.of(context);
-    final saved = app.isSaved(status.station.id);
-    final small = context.text.bodyMedium!.copyWith(fontFeatures: AppText.tabular);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 64),
-      decoration: BoxDecoration(border: last ? null : Border(bottom: BorderSide(color: context.colors.divider))),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Save / unsave without opening the station.
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Semantics(
-            button: true,
-            selected: saved,
-            label: saved
-                ? context.tr('Remove ${status.station.name} from my areas', 'Buang ${status.station.name} dari kawasan saya',
-                    '从我的地区移除${status.station.name}')
-                : context.tr('Save ${status.station.name} to my areas', 'Simpan ${status.station.name} ke kawasan saya',
-                    '将${status.station.name}保存到我的地区'),
-            excludeSemantics: true,
-            child: IconButton(
-              key: ValueKey('star-${status.station.id}'),
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              onPressed: () async {
-                final messenger = ScaffoldMessenger.of(context);
-                final limit = context.tr('You can save up to ${FollowedAreasService.maxAreas} areas. Remove one first.',
-                    'Anda boleh simpan sehingga ${FollowedAreasService.maxAreas} kawasan. Buang satu dahulu.',
-                    '最多只能保存 ${FollowedAreasService.maxAreas} 个地区，请先移除一个。');
-                if (saved) {
-                  await app.unfollow(status.station.id);
-                } else if (await app.follow(status.station.id) == FollowError.limit) {
-                  messenger.showSnackBar(SnackBar(content: Text(limit)));
-                }
-              },
-              icon: Icon(saved ? Icons.star : Icons.star_border, color: saved ? const Color(0xFFB07A00) : context.colors.textMuted),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Semantics(
-            button: true,
-            child: InkWell(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StationDetailScreen(stationId: status.station.id))),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      // Full width: wraps only when the name is too long.
-                      Text(status.station.name, style: context.text.titleMedium),
-                      const SizedBox(height: 6),
-                      Row(children: [
-                        badge,
-                        const SizedBox(width: 10),
-                        Flexible(child: Text(value, style: context.text.bodyLarge!.copyWith(fontWeight: FontWeight.w600, fontFeatures: AppText.tabular))),
-                      ]),
-                      if (detail != null) ...[
-                        const SizedBox(height: 4),
-                        Text(detail!, style: small.copyWith(color: context.colors.textMuted)),
-                      ],
-                      if (towards != null) ...[
-                        const SizedBox(height: 6),
-                        Text(towards!, style: small),
-                        if (percent != null) ...[
-                          const SizedBox(height: 4),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: (percent! / 100).clamp(0.0, 1.0),
-                              minHeight: 6,
-                              backgroundColor: context.colors.divider,
-                              color: RiskStyle.of(status.level).color,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ]),
+    final c = context.colors;
+    final s = widget.status;
+    final saved = app.isSaved(s.station.id);
+    final distance = s.distanceKm == null ? null : '${s.distanceKm!.toStringAsFixed(1)} km';
+    final action = saved ? context.tr('Remove', 'Buang', '移除') : context.tr('Save', 'Simpan', '保存');
+    final actionColor = saved ? const Color(0xFFDC2626) : const Color(0xFFD97706);
+    void open() => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => StationDetailScreen(stationId: s.station.id)));
+
+    return LayoutBuilder(builder: (context, box) {
+      _width = box.maxWidth;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(kCardRadius),
+        child: AnimatedBuilder(
+          animation: _offset,
+          builder: (context, _) {
+            final x = _offset.value;
+            final isOpen = x > 0;
+            return Stack(children: [
+              // The drawer behind the card, on the left edge: text only, white on amber / red.
+              if (isOpen)
+                Positioned.fill(
+                  child: Container(
+                    color: actionColor,
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      key: ValueKey('swipe-action-${s.station.id}'),
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _toggle,
+                      child: SizedBox(
+                        width: x < _drawer ? _drawer : x,
+                        height: double.infinity,
+                        child: Center(
+                          child: Text(action,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+                        ),
+                      ),
+                    ),
                   ),
-                  const Chevron(),
-                ]),
+                ),
+              Transform.translate(
+                offset: Offset(x, 0),
+                child: GestureDetector(
+                  key: ValueKey('station-card-${s.station.id}'),
+                  onHorizontalDragUpdate: _dragUpdate,
+                  onHorizontalDragEnd: _dragEnd,
+                  child: Semantics(
+                    container: true,
+                    button: true,
+                    label: [
+                      s.station.name,
+                      ?distance,
+                      widget.value.replaceAll(' ', ' '),
+                      updatedSince(context, s),
+                    ].join(', '),
+                    hint: context.tr('Open station details', 'Buka butiran stesen', '打开测站详情'),
+                    child: Material(
+                      color: c.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(kCardRadius),
+                        side: c.cardBorder == null ? BorderSide.none : BorderSide(color: c.cardBorder!, width: 1.5),
+                      ),
+                      child: InkWell(
+                        // While the drawer is open, a tap closes it instead of opening the page.
+                        onTap: isOpen ? () => _moveTo(0) : open,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            // Row 1: name, distance.
+                            ExcludeSemantics(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Expanded(
+                                    child: Text(s.station.name,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(fontSize: 16, height: 1.25, fontWeight: FontWeight.w600, color: c.text)),
+                                  ),
+                                  if (distance != null) ...[
+                                    const SizedBox(width: 8),
+                                    Text(distance,
+                                        style: TextStyle(
+                                            fontSize: 12, fontWeight: FontWeight.w500, color: c.textMuted, fontFeatures: AppText.tabular)),
+                                  ],
+                                ]),
+                              ),
+                            ),
+                            // Row 2: the reading and its status; star and arrow on the right.
+                            Row(children: [
+                              Expanded(
+                                child: ExcludeSemantics(
+                                  child: Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                                    Text(widget.value,
+                                        style: TextStyle(
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w700,
+                                          fontFeatures: AppText.tabular,
+                                          color: s.freshness == Freshness.stale ? const Color(0xFF475569) : c.text,
+                                        )),
+                                    widget.pill,
+                                  ]),
+                                ),
+                              ),
+                              // Hidden (and not tappable) while the drawer is open.
+                              IgnorePointer(
+                                ignoring: isOpen,
+                                child: Opacity(
+                                  opacity: isOpen ? 0 : 1,
+                                  child: Semantics(
+                                    button: true,
+                                    selected: saved,
+                                    label: saved
+                                        ? context.tr('Remove ${s.station.name} from my areas', 'Buang ${s.station.name} dari kawasan saya',
+                                            '从我的地区移除${s.station.name}')
+                                        : context.tr('Save ${s.station.name} to my areas', 'Simpan ${s.station.name} ke kawasan saya',
+                                            '将${s.station.name}保存到我的地区'),
+                                    excludeSemantics: true,
+                                    child: IconButton(
+                                      key: ValueKey('star-${s.station.id}'),
+                                      constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+                                      onPressed: () => toggleSaved(context, s.station.id),
+                                      icon: Icon(saved ? Icons.star : Icons.star_border,
+                                          color: saved ? const Color(0xFFB07A00) : c.textMuted),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const ExcludeSemantics(child: Icon(Icons.chevron_right, color: AppColors.chevron, size: 22)),
+                            ]),
+                            // Row 3: when JPS last updated (amber when stale).
+                            ExcludeSemantics(child: UpdatedLine(s)),
+                          ]),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
+            ]);
+          },
         ),
-      ]),
-    );
+      );
+    });
   }
 }
 

@@ -8,6 +8,8 @@ OWN_FEATURES = [
     "level_above_normal",
     "level_change_1h",
     "level_change_3h",
+    "same_time_12h_ago",
+    "same_time_25h_ago",
     "rain_sum_1h",
     "rain_sum_3h",
     "rain_sum_6h",
@@ -22,9 +24,26 @@ UPSTREAM_FEATURES = [
     "up_rain_sum_6h",
 ]
 FEATURES = OWN_FEATURES + UPSTREAM_FEATURES
+# "What the river did next, one cycle ago": the change over the 3 hours that
+# followed the same moment 12 h earlier (about one tide, 12.42 h) and 25 h earlier
+# (about one lunar day, 24.84 h, which also covers the daily rhythm). Near the coast
+# the tide drives most 3-hour changes (Taman Sri Muda: about 1.6 m a day), and each
+# station's own history carries its own tide timing, so no tide table is needed.
+CYCLE_INPUTS = {"same_time_12h_ago": 12, "same_time_25h_ago": 25}
 TARGET = "target_change_m"
 LINEAR_TREND = "linear_trend_change_m"  # baseline only, never a model input
 FAULT_BELOW = -8888  # JPS codes: -9999 offline, -8888 estimated
+# A level of exactly 0.00 that jumps away from the readings around it is a feed glitch
+# (42.86 -> 0.00 -> 42.86). Levels below 0 are real (tide gates, river mouths), and so
+# is a 0.00 the river passes through (-0.03 -> 0.00 -> 0.04), so only isolated jumps go.
+# The logger applies the same rule as readings arrive (logger/jps_logger/collect.py).
+ZERO_JUMP_M = 0.3
+ZERO_NEIGHBOUR_H = 2
+# Also a glitch: a V-shaped spike to 0.00 with the readings within 30 minutes on BOTH
+# sides on the same side of 0 and at least 0.1 m from it (0.21 -> 0.00 -> 0.20). A tide
+# crossing 0 goes from one side to the other, and a real low tide flattens out near 0.
+ZERO_SPIKE_M = 0.1
+ZERO_SPIKE_WINDOW = pd.Timedelta(minutes=30)
 
 # Straight-line baseline, after the existing FloodWatch app (forecast.py):
 # least-squares line through recent levels, extended HORIZON_H hours ahead.
@@ -49,6 +68,35 @@ def validate_stations(stations):
             raise ValueError(f"stations.json: upstream of {s['id']} not in the file: {unknown}")
 
 
+def drop_zero_glitches(level):
+    """level: one station's readings, indexed by time, sorted. A 0.00 becomes missing when
+    - every reading within ZERO_NEIGHBOUR_H hours before and after it (the nearest on
+      each side) is more than ZERO_JUMP_M away, or
+    - it is a spike: the nearest readings on both sides, within ZERO_SPIKE_WINDOW, are on
+      the same side of 0 and at least ZERO_SPIKE_M from it.
+    A 0.00 with no reading near it stays."""
+    level = level.copy()
+    valid = level.dropna()
+    if not (valid == 0).any():
+        return level
+    near = pd.Timedelta(hours=ZERO_NEIGHBOUR_H)
+    times, values = valid.index, valid.to_numpy()
+    for i in np.flatnonzero(values == 0):
+        sides = []
+        if i > 0 and times[i] - times[i - 1] <= near:
+            sides.append(values[i - 1])
+        if i + 1 < len(values) and times[i + 1] - times[i] <= near:
+            sides.append(values[i + 1])
+        jump = bool(sides) and all(abs(v) > ZERO_JUMP_M for v in sides)
+        spike = (0 < i < len(values) - 1
+                 and times[i] - times[i - 1] <= ZERO_SPIKE_WINDOW and times[i + 1] - times[i] <= ZERO_SPIKE_WINDOW
+                 and np.sign(values[i - 1]) == np.sign(values[i + 1])
+                 and min(abs(values[i - 1]), abs(values[i + 1])) >= ZERO_SPIKE_M)
+        if jump or spike:
+            level.loc[times[i]] = np.nan
+    return level
+
+
 def clean_readings(raw):
     """Columns needed: station_id, time, rainfall_mm, river_level_m.
     Returns one row per station per hour, with fault codes removed and
@@ -62,6 +110,7 @@ def clean_readings(raw):
     out = []
     for sid, g in df.groupby("station_id"):
         g = g.drop_duplicates("time", keep="last").set_index("time").sort_index()
+        g["river_level_m"] = drop_zero_glitches(g["river_level_m"])
         hourly = pd.DataFrame({
             "rainfall_mm": g["rainfall_mm"].resample("1h").sum(min_count=1),
             "river_level_m": g["river_level_m"].resample("1h").last(),
@@ -112,6 +161,8 @@ def build_features(clean, stations, with_target=True):
         own = series[sid]
         for col in own.columns:
             g[col] = own[col].to_numpy()
+        for col, h in CYCLE_INPUTS.items():
+            g[col] = level.shift(h - HORIZON_H) - level.shift(h)  # only readings h-3 and h hours old
         ups = [series[u] for u in by_id[sid].get("upstream", []) if u in series]
         pairs = (("up_level_change_1h", "level_change_1h"), ("up_level_change_3h", "level_change_3h"),
                  ("up_rain_sum_3h", "rain_sum_3h"), ("up_rain_sum_6h", "rain_sum_6h"))
