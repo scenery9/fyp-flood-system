@@ -1,0 +1,9 @@
+{
+  "_note": "TEST KEYS ONLY. Made by a Node script from fixed labels; never trust these in the app.",
+  "test_key_id": "test-2026-1",
+  "test_public_key": "AlHKTaMFFIZ67z3g05YCB39xzLe4si5D/X0eBGAUT7Y=",
+  "test_seed": "aQSU6wxLnrVP4P+87vn2sF3A6ioWuFhD/EKLkzSN1y8=",
+  "attacker_public_key": "5EzWTXfiv/I9Yg6oL54/p20oy1GfAHX0v2vacHeXeKg=",
+  "attacker_signature": "rtElDsDX2M6PxkYPC5DEs/eMQw5C9Y/ksqd493RLptRJkCQ//WH45QqiXwZVfLzVk4MTeC5lt4V7vTpQTnntCw==",
+  "signature_without_prefix": "FYGN+Po1eLmpGbTmx5T6P0ts81w2vo5fjgt0q930Fv5sFBirL6dTeOLlrgiMpLlv23dw6qjEb5Sh73C5LrzzCQ=="
+}

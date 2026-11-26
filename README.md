@@ -135,23 +135,88 @@ thresholds.
 
 1. **Cleaning (`features.py`).**
    - Fault codes and negative rain are removed.
+   - **Levels below 0 are kept.** They are real: about 25 tide gates (*pintu air*, *kunci
+     air*) and river mouths read below 0 at low tide, and 8 stations have a JPS normal
+     level below 0 (e.g. Barrage Sungai Melaka D/S, -2.0 m).
+   - **A 0.00 m glitch is removed.** The feed sometimes sends exactly 0.00 for a moment,
+     e.g. 42.86 → 0.00 → 42.86, often at many stations at once (11 stations on 19 Nov 2026
+     at 22:30 UTC). A 0.00 is removed when:
+     - the nearest readings within 2 h on each side are more than 0.3 m away; or
+     - the readings within 30 min on both sides are on the same side of 0 and at least
+       0.1 m from it (0.21 → 0.00 → 0.20).
+
+     A 0.00 the tide passes through (0.08 → 0.00 → -0.08) is kept. On the 17–23 Nov
+     archive, 34 of 77 zero readings were removed. The logger also skips such a 0.00 as it
+     arrives, when the station's previous reading is under 2 h old and more than 0.3 m
+     away, so the app never shows a false "0.00 m".
    - Readings are resampled to **hourly**: rain is summed, and the last level in each hour
      is kept.
    - River-level gaps of up to **2 hours** inside the series are filled by straight-line
      interpolation. Longer gaps stay missing.
-2. **Features: 11 inputs per hour.**
+2. **Features: 13 inputs per hour.**
 
    | Group | Inputs |
    |---|---|
-   | This station (7) | `level_above_normal`, `level_change_1h`, `level_change_3h`, `rain_sum_1h`, `rain_sum_3h`, `rain_sum_6h`, `rain_sum_24h` |
+   | This station (9) | `level_above_normal`, `level_change_1h`, `level_change_3h`, `same_time_12h_ago`, `same_time_25h_ago`, `rain_sum_1h`, `rain_sum_3h`, `rain_sum_6h`, `rain_sum_24h` |
    | Upstream stations (4, averaged) | `up_level_change_1h`, `up_level_change_3h`, `up_rain_sum_3h`, `up_rain_sum_6h` (left empty when a station has no upstream stations) |
+
+   **What the river did one cycle ago.** `same_time_12h_ago` is the change over the 3 hours
+   that followed the same moment 12 hours earlier, about one tide (12.42 h).
+   `same_time_25h_ago` is the same 25 hours earlier, about one lunar day (24.84 h).
+   - Taman Sri Muda is tidal: it rises and falls about twice a day, by a median of 1.6 m a day.
+   - Each station's own history carries its tide timing, so no tide table is needed.
+   - Inland stations simply learn that these inputs matter less.
+   - On the Selangor readings of 20–23 Nov 2026, adding these two inputs gave:
+
+     | | Before | After |
+     |---|---|---|
+     | MAE | 0.209 m | 0.124 m |
+     | Recall (Alert or above) | 0.29 | 0.65 |
+     | F1 | 0.36 | 0.76 |
+     | Taman Sri Muda MAE | 0.345 m | 0.111 m |
+
+   - Clock-based tide waves (sin and cos of the time over 12.42 h and 24 h) added little,
+     so they are not used.
 
    Upstream links come from the stations file. The Klang target is Taman Sri Muda
    (`BKLG0002L`), with Puchong Drop (`BPTL0004L`) and USJ 1 (`BPTL0061L`) upstream
    (`ml/stations_klang.json`).
-3. **Training (`train.py`).**
-   - **XGBoost** regression (`reg:squarederror`, depth 4, learning rate 0.05, 300 rounds,
-     subsample 0.8).
+
+   **Training on many stations (`ml/stations_training.json`).** Three stations give few rows
+   and, until the river floods, no Alert-level hours at all. The inputs are all relative to
+   each station (level above its own normal, changes, rain), so one model can learn from
+   every sound river station in **Selangor and Melaka**, and every station gets a forecast.
+   The file holds the three Klang stations unchanged (with their upstream links), then about
+   120 Selangor and 20 Melaka stations. Thresholds are read from the same JPS sites as the
+   logger: the Selangor feed, and the Melaka site plus publicinfobanjir, under the codes
+   the logger stores readings with. Each station has a `state`, and `metrics.json` reports
+   the main results per state (`by_state`), so a good overall score cannot hide a state the
+   model does badly in. It is made with
+   `python -m jps_logger.stations_file --base ../ml/stations_klang.json --data ../data --out ../ml/stations_training.json`
+   (run in `logger/`). A station is left out when:
+   - a threshold is missing or 0, or the thresholds are out of order;
+   - it has under 300 logged readings;
+   - its level never moves (a stuck sensor);
+   - its usual level is already at or above Alert.
+
+   Export with `--stations ../ml/stations_training.json` and train with
+   `--stations stations_training.json`.
+
+   First run on both states (17–23 Nov 2026 archive):
+
+   | | Stations | Test rows | MAE (no change) | Alert-or-above hours | F1 |
+   |---|---|---|---|---|---|
+   | Selangor | 123 | 2,538 | 0.122 m (0.248 m) | 52 | 0.76 |
+   | Melaka | 20 | 420 | 0.185 m (0.301 m) | 13 | 0.56 |
+
+   A Melaka-only model did no better on Melaka (MAE 0.184 m), so one shared model is used.
+3. **Training (`train.py`, `ensemble.py`).**
+   - A **weighted tree ensemble** of XGBoost, LightGBM, CatBoost and a random forest
+     (XGBoost's random-forest mode), all predicting the 3-hour change.
+   - Weights are 1 / MAE on a validation slice at the end of the training period, and sum to 1.
+     The models are then retrained on all training rows.
+   - The ensemble's TreeSHAP values are the same weighted average of each model's TreeSHAP
+     values, so they still add up exactly to the forecast.
    - The split is **by time**: the oldest 80% of hours train the model and the newest 20% test
      it, with a 3-hour gap so no future value leaks into training. There is no random split.
    - Training needs at least 200 training rows and 50 test rows.
@@ -162,10 +227,21 @@ thresholds.
        4 hourly levels, extended 3 hours).
    - Reported measures: MAE and RMSE, plus recall, precision, missed events and false
      alarms for *Alert or above*.
+   - The same forecasts are also scored as a classification of the risk level they lead to
+     (`classification` in `metrics.json`): a confusion matrix, accuracy, precision, recall,
+     F1 and AUC for *Alert or above*, and a 4×4 confusion matrix with accuracy and macro F1
+     for the four levels.
+   - **Model comparison (`compare.py`).** 16 methods on the same inputs, split and metrics:
+     no change, the FloodWatch line, ridge regression, SVR, k-nearest neighbours, random
+     forest, extra trees, histogram gradient boosting, MLP, LSTM and GRU (only when PyTorch
+     is installed), each ensemble member on its own, and the weighted ensemble. Run `python -m flood_ml.compare --practice` (or
+     `--stations stations_klang.json --readings readings.csv`); it prints a table and writes
+     `ml/output/comparison.json`.
 5. **Likely range (`band_m`).** The error that 80% of test forecasts stayed within. The app
    shows *likely between* `predicted ± band_m`.
-6. **Explanation (`predict.py`).** XGBoost's built-in **TreeSHAP** (`pred_contribs=True`) splits
-   each prediction into one contribution per input, in metres, plus a base value. These add
+6. **Explanation (`predict.py`).** Exact **TreeSHAP** (each member's built-in TreeSHAP, averaged
+   with the ensemble weights) splits each prediction into one contribution per input, in
+   metres, plus a base value. These add
    up exactly to the predicted change, so every reason shown is part of the real calculation,
    not a separate guess.
 7. **Output (`run.py`).** Writes `forecast.json` (schema 1): per station, the current level,
@@ -227,7 +303,7 @@ python -m flood_ml.run --practice            # writes ml/output/{model,metrics,f
 | Push | Firebase Cloud Messaging (`firebase_core`, `firebase_messaging`), free plan |
 | Backend | **Supabase**: Postgres with row-level security, anonymous auth, Storage, `pg_cron`, Edge Functions (TypeScript/Deno: `route`, `send-alerts`) |
 | Routing | openrouteservice (HeiGIT), called only from the Edge Function |
-| AI / ML | Python 3.13, pandas, numpy, **XGBoost**, TreeSHAP (built into XGBoost) |
+| AI / ML | Python 3.13, pandas, numpy, **XGBoost, LightGBM, CatBoost** (weighted ensemble), TreeSHAP (built into each), scikit-learn (comparison) |
 | Data logger | Python, `requests`, pandas, run by GitHub Actions, started every 15 min by Supabase `pg_cron` |
 | CI | GitHub Actions: Dart, Flutter, Supabase SQL, Edge Function, ML and logger tests on every push |
 | Data source | JPS Selangor public API, JPS Melaka public pages, national JPS pages (publicinfobanjir.water.gov.my); each state has a first and a second source |
@@ -378,6 +454,17 @@ You only need this to run your own live backend. Full details and history are in
    7. `supabase/household_groups.sql`
    8. `supabase/places.sql`
    9. `supabase/sources.sql`
+   10. `supabase/reading_problems.sql`: lets the app say *why* a station has no usable level
+       (JPS shows the sensor offline, an estimated value, no value, an out-of-date time, or a
+       0.00 m glitch). Until it is run, the logger leaves these columns out, with a warning.
+
+   Security pack. **First**, once, make the column encryption key in Vault (do not save it anywhere else):
+   `select vault.create_secret(encode(extensions.gen_random_bytes(32), 'hex'), 'column_encryption_key');`
+   Then run:
+   11. `supabase/security.sql`: pgcrypto encryption of headcount free text and staff phone numbers
+   12. `supabase/family.sql`: family roster, one shelter registration per family, encrypted live location
+   13. `supabase/shelter.sql`: capacity- and wheelchair-aware centre allocation, supplies needed vs stock
+   14. `supabase/report_triage.sql`: 3 reports/hour limit, credibility score, report clusters for staff
 
    Then turn on Authentication → *Allow anonymous sign-ins*.
 2. **GitHub repository secrets:** `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. The secret key

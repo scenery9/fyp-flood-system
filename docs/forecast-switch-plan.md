@@ -86,6 +86,28 @@ Suggested:
 | Real rises in the test set | `alert_or_above.events` | > 0, otherwise recall cannot be judged |
 | Range is useful | `band_m` | small next to the gap between thresholds (e.g. < 0.5 m) |
 
+### 2b. Make the forecast signing key (once)
+
+The app shows a real forecast only if `forecast.json.sig` holds a valid Ed25519 signature
+by a key built into the app (`trustedForecastKeys` in
+`packages/flood_core/lib/src/security/forecast_signature.dart`). Until a key is added there,
+every real file is rejected and the app keeps the practice forecast. So someone who gets the
+Storage write key still cannot push a fake "Danger" forecast to phones.
+
+From `ml/`:
+
+```powershell
+python -m flood_ml.sign keygen --key-id fr-2026-1
+```
+
+- **PRIVATE** line → GitHub → Settings → Secrets → Actions → new secret
+  `FORECAST_SIGNING_KEY`. Also add `FORECAST_KEY_ID` = `fr-2026-1`. Do not save the private
+  line anywhere else, and never commit or screenshot it.
+- **PUBLIC** line → paste into `trustedForecastKeys`, run `dart test`, and release the app.
+
+New key later (leaked or yearly): make a new id, add its public key **next to** the old one,
+release, switch the two secrets, then remove the old id in the following release.
+
 ### 3. Create the public bucket (once)
 
 In the Supabase SQL Editor:
@@ -105,11 +127,18 @@ In PowerShell, from `ml/`, after step 1. **Never commit or paste the secret key.
 
 ```powershell
 $env:SUPABASE_SECRET_KEY="sb_secret_..."
-curl.exe -X POST "$env:SUPABASE_URL/storage/v1/object/forecasts/forecast.json" `
-  -H "apikey: $env:SUPABASE_SECRET_KEY" -H "Authorization: Bearer $env:SUPABASE_SECRET_KEY" `
-  -H "x-upsert: true" -H "Content-Type: application/json" -H "Cache-Control: max-age=300" `
-  --data-binary "@output/forecast.json"
+$env:FORECAST_SIGNING_KEY="..."; $env:FORECAST_KEY_ID="fr-2026-1"
+python -m flood_ml.sign sign output/forecast.json     # writes output/forecast.json.sig
+foreach ($f in "forecast.json", "forecast.json.sig") {
+  curl.exe -X POST "$env:SUPABASE_URL/storage/v1/object/forecasts/$f" `
+    -H "apikey: $env:SUPABASE_SECRET_KEY" -H "Authorization: Bearer $env:SUPABASE_SECRET_KEY" `
+    -H "x-upsert: true" -H "Content-Type: application/json" -H "Cache-Control: max-age=300" `
+    --data-binary "@output/$f"
+}
 ```
+
+Upload the two files together. If only one is new, the signature does not match and the app
+shows practice until both are there (at its next refresh).
 
 Then open the live app and pull to refresh. The Taman Sri Muda (BKLG0002L) card should show
 the model's numbers **without** the practice badge. The file is only used within 2 hours of
@@ -150,9 +179,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      - name: Train and forecast
+      - name: Train, forecast and sign
         working-directory: ml
         run: python -m flood_ml.run --stations stations_klang.json --readings readings.csv
+        env:
+          FORECAST_SIGNING_KEY: ${{ secrets.FORECAST_SIGNING_KEY }}
+          FORECAST_KEY_ID: ${{ secrets.FORECAST_KEY_ID }}
       - name: Quality gate
         working-directory: ml
         run: |
@@ -163,12 +195,15 @@ jobs:
           print(json.dumps({k: m[k] for k in ("mae_m", "skill_vs_baseline", "skill_vs_linear_trend", "test_rows", "band_m")}))
           sys.exit(0 if ok else 1)
           EOF
-      - name: Upload forecast.json
+      - name: Upload forecast.json and its signature
         run: |
-          curl -fsS -X POST "$SUPABASE_URL/storage/v1/object/forecasts/forecast.json" \
-            -H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
-            -H "x-upsert: true" -H "Content-Type: application/json" -H "Cache-Control: max-age=300" \
-            --data-binary @ml/output/forecast.json
+          test -s ml/output/forecast.json.sig   # never publish an unsigned file
+          for f in forecast.json forecast.json.sig; do
+            curl -fsS -X POST "$SUPABASE_URL/storage/v1/object/forecasts/$f" \
+              -H "apikey: $SUPABASE_SECRET_KEY" -H "Authorization: Bearer $SUPABASE_SECRET_KEY" \
+              -H "x-upsert: true" -H "Content-Type: application/json" -H "Cache-Control: max-age=300" \
+              --data-binary "@ml/output/$f"
+          done
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

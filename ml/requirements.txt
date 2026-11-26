@@ -1,4 +1,9 @@
 numpy
 pandas
 xgboost
+lightgbm
+catboost
+scikit-learn
 pytest
+# Ed25519 signature on forecast.json (flood_ml/sign.py)
+cryptography

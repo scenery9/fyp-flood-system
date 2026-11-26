@@ -189,6 +189,38 @@ Station files:
   are upstream on Sg. Klang before relying on this.** Run it with
   `python -m flood_ml.run --stations stations_klang.json --readings readings.csv`
   (`station_id` = JPS `stationCode`).
+- `ml/stations_training.json` (25 Nov 2026; Melaka added 26 Nov): the training set. It keeps
+  the three Klang stations unchanged and adds every other sound river station in Selangor
+  (about 120) and Melaka (about 20), so the one model learns from about 140 stations
+  instead of 3, and every station gets a forecast.
+  - Melaka thresholds come from the Melaka site and publicinfobanjir, read with the logger's
+    own code, so station codes match the stored readings.
+  - `metrics.json` has `by_state`.
+  - First run: Selangor MAE 0.122 m (no change 0.248 m), F1 0.76 on 52 Alert hours; Melaka
+    MAE 0.185 m (no change 0.301 m), F1 0.56 on 13 Alert hours.
+  - A Melaka-only model was no better on Melaka (MAE 0.184 m).
+  - Made by `python -m jps_logger.stations_file` from the JPS feed and the archive.
+  - Stations are left out for missing, 0 or out-of-order thresholds, under 300 readings,
+    a stuck sensor, or a usual level already at or above Alert.
+  - Taman Sri Muda is still the station the app shows.
+  - Why: on 20–23 Nov the three Klang stations gave about 64 usable rows a day and no hour at
+    Alert, so recall, F1 and AUC could not be worked out. The Selangor set gave about 2,500
+    test rows with 52 Alert-or-above hours from the same days.
+  - Taman Sri Muda's level follows the tide: a cycle of about 12 hours and a median daily
+    swing of 1.6 m.
+- Tide inputs (25 Nov 2026): `same_time_12h_ago` and `same_time_25h_ago` (see README) were
+  tested against clock-based tide waves on the same rows and split.
+
+  | Inputs | MAE | Recall | F1 | AUC | Taman Sri Muda MAE |
+  |---|---|---|---|---|---|
+  | The 11 inputs | 0.209 m | 0.29 | 0.36 | 0.85 | 0.345 m |
+  | + the two "same time" inputs | 0.124 m | 0.65 | 0.76 | 0.94 | 0.111 m |
+  | + clock waves | 0.192 m | 0.29 | 0.40 | 0.87 | 0.268 m |
+  | + both | 0.122 m | 0.65 | 0.76 | 0.94 | 0.096 m |
+
+  The two "same time" inputs alone were kept: simpler, no tide table, and easy to explain.
+  The app words them as, for example, "12 hours ago, the river rose 0.42 m over the next
+  3 hours", in all three languages.
 
 Each station may list `"upstream": [ids]`; every id must be in the same file.
 
@@ -263,7 +295,10 @@ How readings are stored:
 - Offline (-9999), empty, future-dated and stale (over 24 hours old) readings are skipped.
   Stuck stations, such as Kg. Jawa showing an October 2025 reading, are therefore not
   stored at all; they still appear in the station list. Because nothing older than a day
-  is accepted, a day is complete two days later, and that is when it is archived.
+  is accepted, a day is complete two days later. Since 26 Nov 2026 a day is archived the
+  day after (yesterday), and the last two days are saved again on every run to add readings
+  that came in late; after that the file no longer changes. The commit is named after the
+  last day saved ("up to 2026-11-25"), not the day the job ran.
 - Rain: JPS `hourlyRainfall` is a rolling 60-minute total, so adding up four 15-minute
   snapshots would count the same rain about four times. Both JPS totals are stored as
   given, and the export works out rain per interval from `todayRainfall` (since midnight,
@@ -296,6 +331,18 @@ Limits to know:
 | LG4 Supabase connection | logger/tests/test_collect_export | key only in apikey header, chunks, errors hide the key, paging |
 | LG5 Rain per interval | logger/tests/test_collect_export | day total not rolling hour, midnight, gaps, corrections, per station |
 | LG6 Export | logger/tests/test_collect_export | CSV the model reads, rainfall-only stations, limit to a river |
+| LG10 0.00 m glitches (logger) | logger/tests/test_zero_glitch | a 0.00 far from the previous reading (2 h or less) is skipped and reported; a 0.00 the tide passes through, negative levels and other jumps are kept; nothing recent to compare: kept; the check failing keeps the reading; no lookup when there is no 0.00 |
+| TP58 SOS (moved 26 Nov 2026) | app ui_test | SOS is only in the Danger checklist on Prepare (under "Your way out"), not on Home or the other levels; tap, hold for 2 s, early release, SMS with location and "phone app cannot open" still work there |
+| LG11 Why a reading is unusable | logger/tests/test_reading_problems | offline, estimated, empty, old, future and unreadable times named; every station gives a reading or a problem, never both; the problem is stored on the station and cleared by a good reading; a 0.00 glitch is a problem; before reading_problems.sql the rows are sent without the new columns, with a warning |
+| RP1-RP3 | supabase/test/reading_problems_test | the logger records a problem and anyone can read it in jps_latest next to the last good reading; only known problems are accepted; the public cannot change it; the file can be run twice |
+| TP102 Why there is no usable level (flood_core) | flood_core data_issue_test | each case has its own reason; a problem after the last good level is shown with that level; an older problem is ignored; a station never heard from still says what JPS shows; rows from before the SQL file still work |
+| TP103 Saying why (app) | app data_issue_ui_test | "Not updated" with since when; "Invalid reading" for a sensor offline; a 0.00 glitch with the last good reading; "No JPS levels"; "No data yet" |
+| ML16 Results by state | ml/tests/test_train_predict | every test row counted once across states; a station without a state counts as Selangor; Melaka scored on its own stations |
+| LG8 (added) Melaka stations | logger/tests/test_stations_file | Melaka site and publicinfobanjir both read, codes as the logger stores them, each station once, state recorded; the Melaka site down still gives publicinfobanjir's stations |
+| ML15 0.00 m glitches (history) | ml/tests/test_features | an isolated 0.00 and a small V-shaped spike are removed; a 0.00 the tide crosses or a flat low tide is kept; levels below 0 are kept through cleaning |
+| TP101 Levels below 0 | app negative_levels_test | negative levels shown as they are, never "-0.00 m"; a negative reading is compared with the JPS lines as usual (normal level -2.0 m) |
+| LG9 JKM relief centres (PPS) | logger/tests/test_jkm_pps | capacity from JKM's percentage full, names tidied, rough or out-of-state positions, other rows never changed, closed centres kept, known capacity kept, JKM's real answer passes the places check |
+| LG8 Stations file for training | logger/tests/test_stations_file | thresholds missing, 0 or out of order; too few readings, stuck sensor, always above Alert; Klang entries kept unchanged and first; ml/ accepts the file |
 | AR1 Days and files | logger/tests/test_archive | Malaysia days in UTC, file paths, identical rewrites, empty days |
 | AR2 Archiving | logger/tests/test_archive | finished days only, catch-up, nothing rewritten, day boundaries |
 | AR3 Cleanup | logger/tests/test_archive | only archived days over 30 days old; unarchived days kept and reported |
@@ -323,6 +370,11 @@ Limits to know:
 | ML8 Straight-line baseline | ml/tests/test_features | continues a rise, ignores tiny changes, not a model input |
 | ML9 Baseline comparison | ml/tests/test_train_predict | straight-line results reported and beaten on practice data |
 | ML10 Upstream explanations | ml/tests/test_train_predict | upstream inputs in forecast.json, Klang file runs end to end |
+| ML11 Classification metrics | ml/tests/test_train_predict | AUC on known cases, binary confusion matrix adds up and matches recall/precision, F1, 4-level matrix, model ranks rises better than no change |
+| ML13 Weighted tree ensemble | ml/tests/test_train_predict | four members, weights sum to 1 and come from validation, explanation adds up exactly, ensemble = weighted average of members, model files saved |
+| ML12 Model comparison | ml/tests/test_compare | at least 10 methods on the same test rows and metrics, LSTM/GRU scored or marked skipped, baselines match `evaluate`, too little data refused, `comparison.json` written |
+| ML14 Same time one cycle ago (tide) | ml/tests/test_features | values use only readings 12/9 and 25/22 hours old; on an exact 12-hour tide they equal the next 3 hours' change; empty until enough history |
+| TP38 (added) | flood_core forecast_test | wording of the two new inputs; the contract fixture regenerated from the pipeline, so every input it writes has app wording |
 
 ## Round 4: household details lock (security)
 
@@ -644,3 +696,56 @@ Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
 
 Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
 `npm test` in `supabase/test` (now five files), `python -m pytest` in `logger`.
+
+
+## Round 9: security pack (signed forecast, encryption) and the family / shelter / triage database
+
+- **Signed forecast.** The forecast job signs `forecast.json` with Ed25519 and uploads
+  `forecast.json.sig` next to it (`ml/flood_ml/sign.py`; `run.py` signs when
+  `FORECAST_SIGNING_KEY` is set). The app uses a real forecast only when the signature is
+  valid for a key built into the app (`SignedForecastSource`); otherwise it keeps the
+  practice forecast. No key is trusted yet, so nothing changes for users until the key is
+  made (docs/forecast-switch-plan.md, step 2b). The signed bytes start with
+  `FloodReady forecast.json v1\n`, so a signature made for anything else is never accepted.
+- **AES-256-GCM helper** (`flood_core/lib/src/security/`): random 96-bit IV per message,
+  tag checked before anything is returned. Family location uses it with the family key from
+  the invite link's `#fragment` (never sent to a server), and binds each ciphertext to its
+  family, person and key version.
+- **Crypto library.** `flood_core` now depends on the `cryptography` package (pure Dart,
+  vetted implementations) instead of hand-written cryptography.
+- **Database (run after reading_problems.sql, in this order):**
+  - `security.sql`: pgcrypto encrypts headcount free text and staff phone numbers with a
+    key kept in Vault. Read back only through functions that apply the same "who may see"
+    rules as the row level security.
+  - `family.sql`: family of up to 10 people with and without phones, no duplicates (a phone
+    number already on the list links that person); everyday sickness only (fever, flu,
+    asthma, cough, stomach ache); any member with the app can register the family at a
+    centre, but only one active registration per family (a unique index enforces it);
+    location sharing with consent, chosen viewers, 24-hour limit, ciphertext only; renewing
+    the invite changes the key version and deletes old locations.
+  - `shelter.sql`: centre allocation that keeps a family together, respects capacity
+    (including families on the way) and wheelchair ramps, avoids centres over 90% full and
+    river gauges above normal, and says why; supplies needed vs in stock per resource point.
+  - `report_triage.sql`: 3 reports per hour per phone; credibility 0-100 (JPS readings near
+    the pin + other phones nearby), CORROBORATED only when the reporter was within 5 km;
+    500 m / 30-minute clusters for staff.
+- RLS policies already used `(select auth.uid())` everywhere; the new ones do too.
+- Not done yet: app screens for family, check-in and location; the Python MILP benchmark;
+  the 10,000-report load test against the real Supabase project.
+
+### Round 9 test plans
+
+| Plan | File | What it checks |
+|---|---|---|
+| TP97 | flood_core security_test | signature by a trusted key accepted; one changed character, extra space, CRLF, attacker key, attacker key id, no prefix, malformed files rejected; no key trusted yet |
+| TP98 | flood_core security_test | tampered, unsigned or wrongly signed forecast falls back to practice |
+| TP99 | flood_core security_test | AES-256-GCM matches NIST/McGrew-Viega test case 14; random keys and IVs; wrong key, data or byte fails the same way |
+| TP100 | flood_core security_test | invite link keeps the key in the #fragment; bad links refused; location round trip; a row moved to another person, family or key version does not open |
+| TP101 | ml test_sign | Python makes the same signature as an independent implementation (Node); changed bytes and other keys fail |
+| SEC1-SEC2 | supabase/test/family_test | only ciphertext stored; owner and covering staff read it, others not; client bytes ignored; wrong key fails closed; no key refuses; staff phone |
+| FAM1-FAM6 | supabase/test/family_test | roster, no duplicates, 10-person limit, who changes what; any member registers, one active registration, Edit existing; consent, viewers, outstation, ciphertext-only table; new invite, remove, leave |
+| SH1-SH6 | supabase/test/shelter_triage_test | full and no-ramp halls passed over with reasons; 90% rule; own choice; people on the way count; hazard; supplies vs stock and who sees it |
+| TR1-TR4 | supabase/test/shelter_triage_test | JPS fact support (river, rain), consensus by type and similar text, 5 km rule; 3/hour; client score ignored; clusters; 10,000 reports clustered in about 0.35 s on PGlite |
+
+Run as before: `dart test` in `packages/flood_core`, `flutter test` in `app`,
+`npm test` in `supabase/test` (now eight files), `python -m pytest` in `ml` and `logger`.

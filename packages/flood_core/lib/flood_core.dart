@@ -70,3 +70,8 @@ export 'src/services/location_consent.dart';
 
 // Round 8: relief centres from places/centres.csv (Supabase), Melaka
 export 'src/data/live_centres.dart';
+
+// Security pack: signed forecast, AES-256-GCM, end-to-end family location
+export 'src/security/aes_gcm.dart';
+export 'src/security/family_location_crypto.dart';
+export 'src/security/forecast_signature.dart';
