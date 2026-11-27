@@ -82,10 +82,40 @@ JPS feed:
 - `BKSL0010` Pintu Air Sg Yu 1 (tide gate): 0.08 → 3.47 m, then steady. Possibly the gate
   working, so not clearly an error.
 
-Cleaning only removes false 0.00 readings, so these spikes reach the test set.
-- [ ] **Spike filter** in `clean_readings`: drop a reading that jumps far from both
-  neighbours while they agree with each other (like the 0.00 glitch rule). Then re-run and
-  report NSE with it on. Fix before W9; the W9 test is scored on cleaned data.
+- [x] **Spike filter** (`drop_spikes` in `ml/flood_ml/features.py`, 28 Nov 2026). The raw
+  readings (archive, database, `readings.csv`) are never changed; only the cleaned copy used
+  for training and testing is filtered.
+
+  | Reading | Action |
+  |---|---|
+  | Jumps ≥ 0.5 m away from the reading before it and straight back to the reading after it, the two neighbours agreeing within 20% of the jump, each ≤ 30 min away | **Fail: removed** from the cleaned copy |
+  | Same shape, 0.3–0.5 m | **Suspect: kept**, counted in `metrics.json` → `cleaning` |
+  | Any jump that stays, of any size (rain, tide, gate, or a fault that holds) | **Kept** |
+
+  Why this rule (not a size limit or a plain Hampel filter):
+  - **Size alone fails.** Kajang, 26 Nov 2026, 36–62 mm of rain: BHLT0059L, BHLT0005 and
+    BHLT0057 rose 1.7–2.9 m within about an hour and fell only 0.3–0.9 m over the next 1.5–2 h.
+    Faults of the same size went out and back within 15–30 minutes.
+  - **Plain Hampel** (7 readings, k = 3 scaled MAD; Kuhaneswaran et al., 2026; JASTER, 2024)
+    flagged 13.6% of readings, including the Kajang flood peaks. With a 0.2 m minimum it kept
+    Kajang, but 320 of its 499 extra flags were the first reading of a level change that stays
+    (e.g. tide gate BKLG0043: 1.64 → 2.26 → 2.29), which is real.
+  - Spike = isolated value (Talagala et al., 2019); fail and suspect thresholds as in the
+    NOAA/IOOS QARTOD water-level spike test; 0.5 m chosen on the logged data.
+
+  Result on 28 Nov 2026 (all stations, archive + database):
+
+  | | Spikes removed | MAE | "No change" MAE | NSE |
+  |---|---|---|---|---|
+  | Before the filter | 0 | 0.207 m | 0.346 m | −0.162 |
+  | With the filter | 158 at 14 stations (0.15%); 71 suspect kept | 0.198 m | 0.337 m | −0.035 |
+  | With the filter, without the 5 worst stations | | 0.169 m | 0.310 m | 0.664 |
+
+  Still negative because of **`BPTL0006L`** (58% of squared error): it jumps from 14.56 m to
+  34.24 m and stays there, 19.6 m above its normal level. A jump that stays is kept by design.
+- [ ] Decide with the supervisor how to handle a jump that stays but is physically
+  impossible (BPTL0006L): leave it out of the test as a known faulty station, or add a
+  plausible-range check per station. Decide before W9; the W9 test is scored on cleaned data.
 
 ### B. Run the app (debug) on real JPS data
 

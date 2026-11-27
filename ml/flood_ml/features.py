@@ -74,6 +74,18 @@ ZERO_NEIGHBOUR_H = 2
 # crossing 0 goes from one side to the other, and a real low tide flattens out near 0.
 ZERO_SPIKE_M = 0.1
 ZERO_SPIKE_WINDOW = pd.Timedelta(minutes=30)
+# Isolated spikes (any value, not just 0.00): one reading that jumps away from the reading
+# before it and straight back to the reading after it, while those two agree
+# (32.77 -> 15.97 -> 32.74). Two thresholds, as in the NOAA/IOOS QARTOD spike test:
+# - SPIKE_FAIL_M: removed from the cleaned copy used for training and testing;
+# - SPIKE_SUSPECT_M: kept, only counted (small blips may be waves or a gate moving).
+# A jump that stays, of any size, is always kept: heavy rain (Kajang, 26 Nov 2026: up to
+# 2.5 m in one hour), tides and gates all do that. The raw readings are never changed.
+# Thresholds chosen on the logged data: see docs/dev-roadmap.md.
+SPIKE_FAIL_M = 0.5
+SPIKE_SUSPECT_M = 0.3
+SPIKE_RETURN = 0.2       # the readings either side differ by at most 20% of the jump
+SPIKE_WINDOW = pd.Timedelta(minutes=30)
 
 # Straight-line baseline, after the existing FloodWatch app (forecast.py):
 # least-squares line through recent levels, extended HORIZON_H hours ahead.
@@ -127,20 +139,54 @@ def drop_zero_glitches(level):
     return level
 
 
+def spike_size(level):
+    """level: one station's readings, indexed by time, sorted. For each reading, the size of
+    its isolated spike in metres (0 when it is not one): the smaller of the jump in and the
+    jump out, when they go in opposite directions, the neighbours are within SPIKE_WINDOW and
+    the neighbours agree to within SPIKE_RETURN of that size."""
+    size = pd.Series(0.0, index=level.index)
+    valid = level.dropna()
+    if len(valid) < 3:
+        return size
+    t, x = valid.index, valid.to_numpy(float)
+    jump_in, jump_out = x[1:-1] - x[:-2], x[2:] - x[1:-1]
+    smaller = np.minimum(np.abs(jump_in), np.abs(jump_out))
+    is_spike = ((np.sign(jump_in) * np.sign(jump_out) < 0)
+                & (np.abs(x[2:] - x[:-2]) <= SPIKE_RETURN * smaller)
+                & (t[1:-1] - t[:-2] <= SPIKE_WINDOW) & (t[2:] - t[1:-1] <= SPIKE_WINDOW))
+    size.loc[t[1:-1]] = np.where(is_spike, smaller, 0.0)
+    return size
+
+
+def drop_spikes(level):
+    """Returns (level with spikes >= SPIKE_FAIL_M made missing, number removed,
+    number of suspect spikes kept). Works on a copy."""
+    size = spike_size(level)
+    fail = size >= SPIKE_FAIL_M
+    suspect = (size >= SPIKE_SUSPECT_M) & ~fail
+    return level.mask(fail), int(fail.sum()), int(suspect.sum())
+
+
 def clean_readings(raw):
     """Columns needed: station_id, time, rainfall_mm, river_level_m.
-    Returns one row per station per hour, with fault codes removed and
-    river gaps of up to 2 hours filled in."""
+    Returns one row per station per hour, with fault codes, 0.00 glitches and isolated
+    spikes removed and river gaps of up to 2 hours filled in. `raw` is not changed.
+    The counts of removed and suspect spikes are in the result's .attrs["spikes"]."""
     df = raw.copy()
     df["time"] = pd.to_datetime(df["time"], utc=True)
     for col in ("rainfall_mm", "river_level_m"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
         df.loc[df[col] <= FAULT_BELOW, col] = np.nan
     df.loc[df["rainfall_mm"] < 0, "rainfall_mm"] = np.nan
-    out = []
+    out, removed, suspect = [], {}, {}
     for sid, g in df.groupby("station_id"):
         g = g.drop_duplicates("time", keep="last").set_index("time").sort_index()
         g["river_level_m"] = drop_zero_glitches(g["river_level_m"])
+        g["river_level_m"], n_fail, n_suspect = drop_spikes(g["river_level_m"])
+        if n_fail:
+            removed[sid] = n_fail
+        if n_suspect:
+            suspect[sid] = n_suspect
         hourly = pd.DataFrame({
             "rainfall_mm": g["rainfall_mm"].resample("1h").sum(min_count=1),
             "river_level_m": g["river_level_m"].resample("1h").last(),
@@ -149,9 +195,11 @@ def clean_readings(raw):
         hourly["station_id"] = sid
         out.append(hourly.reset_index())
     cols = ["station_id", "time", "rainfall_mm", "river_level_m"]
-    if not out:
-        return pd.DataFrame(columns=cols)
-    return pd.concat(out, ignore_index=True)[cols]
+    clean = pd.concat(out, ignore_index=True)[cols] if out else pd.DataFrame(columns=cols)
+    clean.attrs["spikes"] = {"removed": sum(removed.values()), "suspect_kept": sum(suspect.values()),
+                             "removed_by_station": removed, "suspect_by_station": suspect,
+                             "fail_m": SPIKE_FAIL_M, "suspect_m": SPIKE_SUSPECT_M}
+    return clean
 
 
 def _own_series(g):

@@ -42,6 +42,8 @@ def run(raw, stations, now, out_dir, is_practice_data, weather=None):
     model = train_model(train, features=cols, input_set=input_set)
     metrics = evaluate(model, test, stations)
     metrics["is_practice_data"] = bool(is_practice_data)
+    # Isolated spikes removed from (and suspect ones kept in) the cleaned copy; raw is unchanged.
+    metrics["cleaning"] = dict(clean.attrs.get("spikes", {}))
     metrics["inputs"] = {"set": input_set, "validation_scores": val_scores, "columns": list(model.features),
                          "correction_alpha": getattr(model, "alpha", None)}
     chance = FloodChance.fit(feats[feats["time"] <= now])
@@ -70,6 +72,10 @@ def main():
     raw = make_practice_readings(stations, end=now) if a.practice else pd.read_csv(a.readings)
     weather = load_weather(a.weather) if a.weather else None
     metrics, forecast = run(raw, stations, now, a.out, is_practice_data=a.practice, weather=weather)
+    sp = metrics["cleaning"]
+    print(f"Cleaning: {sp['removed']} isolated spikes >= {sp['fail_m']} m removed from the training copy "
+          f"({len(sp['removed_by_station'])} stations); {sp['suspect_kept']} suspect spikes "
+          f"{sp['suspect_m']}-{sp['fail_m']} m kept. Raw readings unchanged.")
     vs = metrics['inputs']['validation_scores']
     print(f"Inputs chosen on validation: {metrics['inputs']['set']} (alpha {metrics['inputs']['correction_alpha']})")
     for name, sc in vs.items():

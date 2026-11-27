@@ -84,6 +84,60 @@ def test_small_v_shaped_spike_to_zero_is_a_glitch_but_a_flat_low_tide_is_not():
     assert drop_zero_glitches(pd.Series([0.25, 0.0, 0.28], index=hours)).iloc[1] == 0.0  # slow real low tide
 
 
+def every_15_min(values, start="2026-11-26T08:00:00Z"):
+    return pd.Series(values, index=pd.date_range(start, periods=len(values), freq="15min"), dtype=float)
+
+
+def test_isolated_spike_is_removed():
+    from flood_ml.features import drop_spikes
+    # BGBK0001L, 26 Nov 2026: 32.77 -> 15.97 -> 32.74 in 30 minutes
+    level, removed, suspect = drop_spikes(every_15_min([32.78, 32.77, 15.97, 32.74, 32.75]))
+    assert np.isnan(level.iloc[2]) and removed == 1 and suspect == 0
+    assert level.drop(level.index[2]).notna().all()
+    # upward too (BPTL0002L-style), and a spike at the very end cannot be judged, so it stays
+    level, removed, _ = drop_spikes(every_15_min([17.01, 17.01, 10.14, 17.01, 17.0, 10.2]))
+    assert np.isnan(level.iloc[2]) and removed == 1 and level.iloc[5] == 10.2
+
+
+def test_heavy_rain_rise_is_kept():
+    from flood_ml.features import drop_spikes
+    # BHLT0059L, Kajang, 26 Nov 2026 during 37 mm of rain: +2.5 m in an hour, slow fall after
+    kajang = [18.46, 18.46, 18.49, 18.9, 19.63, 20.3, 20.96, 21.2, 21.4, 21.35, 21.3, 21.2, 21.06]
+    level, removed, suspect = drop_spikes(every_15_min(kajang))
+    assert removed == 0 and suspect == 0 and level.equals(every_15_min(kajang))
+    # one-reading jump of 1.7 m that stays (BHLT0005): kept
+    level, removed, _ = drop_spikes(every_15_min([22.41, 22.42, 24.13, 25.01, 25.02]))
+    assert removed == 0 and level.notna().all()
+
+
+def test_step_that_stays_is_kept_and_small_blip_is_only_suspect():
+    from flood_ml.features import drop_spikes
+    # tide gate (BKLG0043): 1.64 -> 2.26 and stays
+    _, removed, suspect = drop_spikes(every_15_min([1.73, 1.64, 2.26, 2.29, 2.26]))
+    assert removed == 0 and suspect == 0
+    # 0.34 m blip that comes back (BPTL0009L): kept, counted as suspect
+    level, removed, suspect = drop_spikes(every_15_min([36.5, 36.48, 36.14, 36.47, 36.49]))
+    assert removed == 0 and suspect == 1 and level.notna().all()
+    # does not come back (neighbours 0.4 m apart): not a spike
+    _, removed, _ = drop_spikes(every_15_min([10.0, 10.0, 12.0, 10.4, 10.4]))
+    assert removed == 0
+    # neighbours too far apart in time (an hour each side): not judged, kept
+    t = pd.to_datetime(["2026-11-26T08:00Z", "2026-11-26T09:00Z", "2026-11-26T10:00Z"])
+    _, removed, _ = drop_spikes(pd.Series([32.77, 15.97, 32.74], index=t))
+    assert removed == 0
+
+
+def test_cleaning_never_changes_the_raw_readings_and_reports_counts():
+    t = pd.date_range("2026-11-26T08:00:00Z", periods=8, freq="15min")
+    raw = pd.DataFrame({"station_id": "A", "time": t, "rainfall_mm": 0.0,
+                        "river_level_m": [10.0, 10.0, 10.0, 6.0, 10.0, 10.0, 10.0, 10.0]})
+    before = raw.copy(deep=True)
+    c = clean_readings(raw)
+    pd.testing.assert_frame_equal(raw, before)  # the original data is kept as it was
+    assert c.attrs["spikes"]["removed"] == 1 and c.attrs["spikes"]["removed_by_station"] == {"A": 1}
+    assert (c["river_level_m"] == 10.0).all()  # 08:00 hour ends on 10.0, not the 6.0 spike
+
+
 def test_zero_with_nothing_near_it_is_kept():
     from flood_ml.features import drop_zero_glitches
     s = pd.Series([5.0, 0.0], index=pd.to_datetime(["2026-11-19T10:00:00Z", "2026-11-19T22:00:00Z"]))

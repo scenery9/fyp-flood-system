@@ -168,6 +168,12 @@ thresholds.
      archive, 34 of 77 zero readings were removed. The logger also skips such a 0.00 as it
      arrives, when the station's previous reading is under 2 h old and more than 0.3 m
      away, so the app never shows a false "0.00 m".
+   - **An isolated spike is removed from the training copy** (`drop_spikes`). A reading that
+     jumps ≥ 0.5 m away and straight back within 30 min, while the readings either side
+     agree (32.77 → 15.97 → 32.74), is left out. Spikes of 0.3–0.5 m are kept and counted as
+     suspect. A jump that stays (heavy rain, tide, gate) is always kept. The raw readings are
+     never changed. Counts are in `metrics.json` → `cleaning`; reasons and numbers in
+     [docs/dev-roadmap.md](docs/dev-roadmap.md).
    - Readings are resampled to **hourly**: rain is summed, and the last level in each hour
      is kept.
    - River-level gaps of up to **2 hours** inside the series are filled by straight-line
@@ -503,6 +509,8 @@ You only need this to run your own live backend. Full details and history are in
    Weather and incidents (public data, read by everyone, written only by the logger):
    15. `supabase/weather.sql`: 3-day rain forecast (Open-Meteo, MET Malaysia) and the outlook
    16. `supabase/jkr.sql`: JKR disaster incidents and the JPS gauges near each one
+   17. `supabase/flood_events.sql`: one row per flood spot from the JKR reports (view
+       `jkr_flood_spot`), the real floods the forecast is checked against
 
    Then turn on Authentication → *Allow anonymous sign-ins*.
 2. **GitHub repository secrets:** `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. The secret key
@@ -512,6 +520,9 @@ You only need this to run your own live backend. Full details and history are in
    **Logger schedule:** make a fine-grained GitHub token (this repository only, *Actions: Read
    and write*), put it in `supabase/logger_schedule.sql` and run that file. Supabase then starts
    the logger every 15 minutes. Do not commit the filled-in copy; renew the token before it expires.
+   Then run `supabase/jkr_schedule.sql` (no secret in it): Supabase also starts the JKR incident
+   logger every hour, using the same token. Then run `supabase/cron_cleanup.sql`: every Sunday it
+   deletes cron run-log entries older than 7 days (only the log, no data).
 3. **Firebase.** Add an Android app `com.scenery9.floodready` and put `google-services.json` in
    `app/android/app/`. Generate a service-account key; it is a secret.
 4. **Edge Function secrets:** `ORS_API_KEY` (from account.heigit.org),
@@ -558,8 +569,9 @@ checks are in [docs/ui_test_plan.md](docs/ui_test_plan.md).
   data are not findings.
 - The real model is trained on, and forecasts, all 143 stations in `ml/stations_training.json`.
   Only Taman Sri Muda (`BKLG0002L`) has upstream links (Puchong Drop and USJ 1), and those
-  still need to be checked on a map. A few stations send single faulty readings (e.g. 32.8 → 16.0 → 32.7 m) that cleaning
-  does not yet remove; see [docs/dev-roadmap.md](docs/dev-roadmap.md).
+  still need to be checked on a map. Isolated faulty readings (e.g. 32.8 → 16.0 → 32.7 m)
+  are left out of training, but a wrong value that holds (BPTL0006L at 34.2 m, normal 14.6 m)
+  is kept by design and still affects the scores; see [docs/dev-roadmap.md](docs/dev-roadmap.md).
 - The level model has a fixed **3-hour horizon** and gives a single likely range.
 - The **chance of flood in the next 24 hours** (`ml/flood_ml/probability.py`) is a separate
   XGBoost classifier per JPS level, calibrated on the newest day it did not learn from. "Flood"
