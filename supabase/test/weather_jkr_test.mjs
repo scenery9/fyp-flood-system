@@ -1,4 +1,5 @@
-// Tests supabase/weather.sql (rain forecast) and supabase/jkr.sql (JKR disaster incidents)
+// Tests supabase/weather.sql (rain forecast), supabase/jkr.sql (JKR disaster incidents)
+// and supabase/flood_events.sql (one row per flood spot)
 // on a local Postgres (PGlite), after readings.sql: everyone may read, only the logger
 // (service_role) may write, and no column exists for the JKR officer's personal details.
 // Run:  npm install && npm test
@@ -15,7 +16,7 @@ await db.exec(`
   grant usage on schema auth to anon, authenticated;
   grant usage on schema public to service_role;
 `);
-for (const f of ['schema.sql', 'readings.sql', 'weather.sql', 'jkr.sql']) {
+for (const f of ['schema.sql', 'readings.sql', 'weather.sql', 'jkr.sql', 'flood_events.sql']) {
   await db.exec(readFileSync(new URL(`../${f}`, import.meta.url), 'utf8'));
 }
 
@@ -79,6 +80,35 @@ r = await db.query(`select column_name from information_schema.columns
   where table_schema = 'public' and table_name like 'jkr_%'
     and column_name in ('report_by', 'phone_no', 'phone_no_office', 'user_id', 'action_by_id', 'verification_note')`);
 check('no JKR table has a column for personal details', r.rows.length === 0, r.rows);
+
+// WJ4 flood spots: every report counts, except a re-post of the same spot
+// (same road, within 3 hours, under 300 m). 10637 is already stored above.
+r = await as('service_role', `insert into public.jkr_incident
+  (incident_id, type, type_ms, occurred_at, lat, lon, district, route_name, depth_m, last_seen_at) values
+  (10636, 'Flood', 'Banjir', '2026-11-25T01:00:00Z', 2.815525, 101.661452, 'Kuala Langat', 'JALAN TM 3', 0.1, '2026-11-27T07:27:00Z'),
+  (10638, 'Flood', 'Banjir', '2026-11-25T01:00:00Z', 2.814630, 101.658478, 'Kuala Langat', 'JALAN 3 RTB', 0.1, '2026-11-27T07:27:00Z'),
+  (10700, 'Flood', 'Banjir', '2026-11-25T02:30:00Z', 2.815600, 101.661500, 'Kuala Langat', 'Jalan TM 3 ', 0.4, '2026-11-27T07:27:00Z'),
+  (10701, 'Flood', 'Banjir', '2026-11-26T09:00:00Z', 2.815525, 101.661452, 'Kuala Langat', 'JALAN TM 3', 0.2, '2026-11-27T07:27:00Z'),
+  (10702, 'Landslide', 'Tanah Runtuh', '2026-11-25T01:00:00Z', 2.8, 101.6, 'Kuala Langat', 'JALAN X', 4, '2026-11-27T07:27:00Z')`);
+check('the logger can store more incidents', !r.error, r);
+await as('service_role', `update public.jkr_incident set route_name = 'JALAN 2 RTB' where incident_id = 10637`);
+await as('service_role', `insert into public.jkr_incident_seen values (10700, '2026-11-27T08:27:00Z', 'Water Rising', 'Closed', 0.5)`);
+r = await as('anon', `select spot_id::int, reports::int, incident_ids::int[] as ids, max_depth_m, river_station,
+  river_reached_warning from public.jkr_flood_spot order by spot_id`);
+const spots = Object.fromEntries((r.rows ?? []).map((x) => [x.spot_id, x]));
+check('anyone can read the flood spots', !r.error && r.rows.length > 0, r);
+check('three nearby reports on different roads stay three spots',
+  !!spots[10636] && !!spots[10637] && !!spots[10638], r.rows);
+check('a re-post (same road, 1.5 h later, 10 m away) joins its spot',
+  spots[10636]?.reports === 2 && JSON.stringify(spots[10636]?.ids) === '[10636,10700]' && !spots[10700], spots[10636]);
+check('the spot keeps the deepest depth seen', spots[10636]?.max_depth_m === 0.5, spots[10636]);
+check('the same road flooding again a day later is a new spot', !!spots[10701], r.rows);
+check('a landslide is not a flood spot', !spots[10702], r.rows);
+check('4 flood spots in all (10636 + its re-post, 10637, 10638, 10701)', r.rows?.length === 4, r.rows);
+check('a spot has its nearest river station; Warning not stored, so not counted as reached',
+  spots[10637]?.river_station === 'BKLT0001L' && spots[10637]?.river_reached_warning === false, spots[10637]);
+r = await as('anon', `select round(public.distance_km(2.815525, 101.661452, 2.814308, 101.65328)::numeric, 2) as d`);
+check('distance_km is the great-circle distance (0.92 km)', Number(r.rows?.[0]?.d) === 0.92, r);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
