@@ -56,7 +56,7 @@ void main() {
     test('wrong or damaged files are refused', () {
       final bad = <String>[
         'not json', '[]', '{}',
-        file([], extra: {'schema': 2}),
+        file([], extra: {'schema': 3}),
         file([], extra: {'horizon_hours': 0}),
         file([], extra: {'horizon_hours': 99}),
         file([], extra: {'generated_at': 'yesterday'}),

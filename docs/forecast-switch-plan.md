@@ -55,8 +55,10 @@ Code:
 
 ### 1. Wait for enough real readings
 
-The model needs at least **200 training rows and 50 test rows** (hourly rows, after cleaning)
-for `BKLG0002L`, or `run.py` stops with "Not enough data to train". That is roughly 11–12
+The model is trained on all 143 stations in `ml/stations_training.json` and forecasts every
+one of them that has a reading in the last 2 hours. It needs at least **200 training rows and
+50 test rows** (hourly rows, after cleaning), or `run.py` stops with "Not enough data to
+train". With all stations this was reached on 28 Nov 2026 (5,693 test hours). That is roughly 11–12
 days of clean logging from 17 Nov 2026. A model worth trusting needs much longer, ideally
 including some monsoon-season rises (Nov–Jan), because a model trained only on dry weeks has
 never seen a flood.
@@ -65,12 +67,12 @@ Check from your computer:
 
 ```powershell
 cd logger
-$env:SUPABASE_URL="https://YOUR-PROJECT.supabase.co"
-$env:SUPABASE_PUBLISHABLE_KEY="sb_publishable_..."
+$s = Get-Content ..\app\secrets.json -Raw | ConvertFrom-Json
+$env:SUPABASE_URL = $s.SUPABASE_URL; $env:SUPABASE_PUBLISHABLE_KEY = $s.SUPABASE_PUBLISHABLE_KEY
 git pull
-python -m jps_logger.export --since 2026-11-17 --stations ..\ml\stations_klang.json --out ..\ml\readings.csv
+python -m jps_logger.export --since 2026-11-17 --stations ..\ml\stations_training.json --out ..\ml\readings.csv
 cd ..\ml
-python -m flood_ml.run --stations stations_klang.json --readings readings.csv
+python -m flood_ml.run --stations stations_training.json --readings readings.csv
 ```
 
 ### 2. Check the model is good enough to publish
@@ -140,8 +142,8 @@ foreach ($f in "forecast.json", "forecast.json.sig") {
 Upload the two files together. If only one is new, the signature does not match and the app
 shows practice until both are there (at its next refresh).
 
-Then open the live app and pull to refresh. The Taman Sri Muda (BKLG0002L) card should show
-the model's numbers **without** the practice badge. The file is only used within 2 hours of
+Then open the live app and pull to refresh. The station cards (for example Taman Sri Muda,
+BKLG0002L) should show the model's numbers **without** the practice badge. The file is only used within 2 hours of
 `generated_at`, so a hand upload stops being used after 2 hours and the app falls back to
 practice. That is expected; step 5 keeps the file fresh.
 
@@ -175,13 +177,13 @@ jobs:
       - run: pip install -r logger/requirements.txt -r ml/requirements.txt
       - name: Export readings
         working-directory: logger
-        run: python -m jps_logger.export --since 2026-11-17 --stations ../ml/stations_klang.json --out ../ml/readings.csv
+        run: python -m jps_logger.export --since 2026-11-17 --stations ../ml/stations_training.json --out ../ml/readings.csv
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
       - name: Train, forecast and sign
         working-directory: ml
-        run: python -m flood_ml.run --stations stations_klang.json --readings readings.csv
+        run: python -m flood_ml.run --stations stations_training.json --readings readings.csv
         env:
           FORECAST_SIGNING_KEY: ${{ secrets.FORECAST_SIGNING_KEY }}
           FORECAST_KEY_ID: ${{ secrets.FORECAST_KEY_ID }}
@@ -221,19 +223,19 @@ Notes:
 ### 6. Confirm, then update the docs
 
 - Actions → *Publish AI forecast* → *Run workflow*, and check it is green.
-- In the app, the BKLG0002L card has no practice badge, and More → *Alerts near you now* can
+- In the app, station cards (e.g. BKLG0002L) have no practice badge, and More → *Alerts near you now* can
   show "expected" alerts.
 - Update the README (*Limitations*) and `docs/daily-updates.md`.
 
 ## What changes for users after the switch
 
-- The card for **BKLG0002L** (and any station added to `stations_klang.json`) shows the real
-  model's forecast and its reasons.
-- **Every other station's card shows "No forecast for this area right now".** The app uses one
-  file only, so stations that are not in the real file no longer get a practice forecast. This
-  is deliberate: a phone never shows real and made-up forecasts side by side. Covering more
-  stations means adding them, with their upstream stations, to `ml/stations_klang.json` (or a
-  wider stations file).
+- Every station in `ml/stations_training.json` (143 in Selangor and Melaka) with a reading in
+  the last 2 hours shows the real model's forecast and its reasons (136 on 28 Nov 2026).
+- **Any other station's card shows "No forecast for this area right now"**, including one
+  whose reading is over 2 hours old. The app uses one file only, so stations that are not in
+  the real file no longer get a practice forecast. This is deliberate: a phone never shows
+  real and made-up forecasts side by side. Covering more stations means adding them to the
+  stations file (`python -m jps_logger.stations_file`, see README).
 - "Expected to reach Warning/Danger" alerts become possible for those stations, in the app only.
   Push alerts are still sent for official JPS levels only.
 

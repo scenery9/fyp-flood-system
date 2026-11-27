@@ -11,7 +11,9 @@ import '../services/forecast_service.dart' show ForecastSource;
 ///
 /// To rotate: add the new key here, release the app, then switch the GitHub
 /// secret to the new private key; remove the old id one release later.
-const Map<String, String> trustedForecastKeys = {};
+const Map<String, String> trustedForecastKeys = {
+  'fr-2026-1': 'YteH9yPdcTWIfFI8QUDS235a8/l2FM+pdnX74EulP/Q=',
+};
 
 /// Signed messages start with this, so a signature made by the forecast key
 /// can never be reused for anything other than forecast.json (domain

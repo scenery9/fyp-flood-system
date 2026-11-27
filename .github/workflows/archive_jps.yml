@@ -38,6 +38,12 @@ jobs:
       - name: Save finished days to data/
         working-directory: logger
         run: python -m jps_logger.archive archive
+      - name: Save finished days of weather forecasts to data/forecast/
+        working-directory: logger
+        run: python -m jps_logger.weather archive
+      - name: Save finished days of JKR incidents to data/incidents/
+        working-directory: logger
+        run: python -m jps_logger.jkr archive
       - name: Commit and push the archive files
         run: |
           git config user.name "github-actions[bot]"
@@ -54,6 +60,9 @@ jobs:
       - name: Remove archived days older than 30 days from Supabase
         working-directory: logger
         run: python -m jps_logger.archive cleanup
+      - name: Remove archived weather forecast days older than 30 days from Supabase
+        working-directory: logger
+        run: python -m jps_logger.weather cleanup
       - name: Check database size
         working-directory: logger
         run: python -m jps_logger.archive check-size

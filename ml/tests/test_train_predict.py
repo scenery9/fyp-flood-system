@@ -35,12 +35,14 @@ def test_model_beats_the_no_change_baseline(trained):
     assert m["band_m"] > 0
 
 
-def test_event_metrics_are_reported(trained):
-    e = trained["metrics"]["alert_or_above"]
-    assert e["events"] > 0
-    for who in ("model", "baseline"):
-        assert 0 <= e[who]["recall"] <= 1
-        assert e[who]["missed"] + round(e[who]["recall"] * e["events"]) == e["events"]
+def test_prediction_metrics_are_reported(trained):
+    m = trained["metrics"]
+    for key in ("nse", "willmott_d", "persistence_index", "bias_m", "peak_error_m"):
+        assert m[key] is not None
+    assert m["persistence_index"] > 0  # better than "no change" on practice data
+    assert m["baseline"]["persistence_index"] == pytest.approx(0.0)
+    assert 0 < m["willmott_d"] <= 1
+    assert m["high_water"]["rows"] > 0
 
 
 # ML5 forecast file
@@ -50,18 +52,18 @@ def forecast(trained, clean, stations):
 
 
 def test_forecast_header(forecast):
-    assert forecast["schema"] == 1
+    assert forecast["schema"] == 2
     assert forecast["horizon_hours"] == 3
     assert forecast["generated_at"] == "2026-11-17T03:00:00Z"
     assert forecast["is_practice_data"] is True
 
 
-def test_one_entry_per_station_with_sane_values(forecast, stations):
+def test_one_entry_per_station_with_sane_values(forecast, stations, trained):
     assert {e["station_id"] for e in forecast["stations"]} == {s["id"] for s in stations}
     for e in forecast["stations"]:
         assert e["low_m"] < e["predicted_level_m"] < e["high_m"]
         assert abs(e["predicted_level_m"] - e["current_level_m"]) < 5
-        assert [f["feature"] for f in e["factors"]] != [] and {f["feature"] for f in e["factors"]} == set(FEATURES)
+        assert [f["feature"] for f in e["factors"]] != [] and {f["feature"] for f in e["factors"]} == set(trained["model"].features)
 
 
 def test_explanation_adds_up_to_the_prediction(forecast):
@@ -95,7 +97,7 @@ def test_no_data_gives_an_empty_but_valid_file(trained, stations, tmp_path):
     f = make_forecast(trained["model"], empty, stations, NOW, 0.1, True)
     assert f["stations"] == []
     write_forecast(f, tmp_path / "f.json")
-    assert json.loads((tmp_path / "f.json").read_text())["schema"] == 1
+    assert json.loads((tmp_path / "f.json").read_text())["schema"] == 2
 
 
 # ML6 whole pipeline
@@ -123,7 +125,7 @@ def test_straight_line_baseline_is_reported(trained):
     assert lin["mae_m"] > 0 and lin["rmse_m"] > 0
     assert 0 <= lin["fallback_rows"] < m["test_rows"]
     assert m["skill_vs_linear_trend"] == pytest.approx(1 - m["mae_m"] / lin["mae_m"])
-    assert set(m["alert_or_above"]) == {"events", "model", "baseline", "linear_trend"}
+    assert "classification" not in m and "alert_or_above" not in m  # prediction metrics only
 
 
 def test_model_beats_the_straight_line_on_practice_data(trained):
@@ -247,7 +249,7 @@ def test_metrics_describe_the_ensemble(trained):
     assert d["ensemble_validation_mae_m"] is not None
 
 
-# ML11 classification metrics (confusion matrix, accuracy, precision, recall, F1, AUC)
+# AUC is still used inside the flood-chance model (probability.py)
 def test_auc_on_known_cases():
     from flood_ml.train import auc
     assert auc([0.1, 0.2, 0.8, 0.9], [0, 0, 1, 1]) == 1.0
@@ -257,36 +259,11 @@ def test_auc_on_known_cases():
     assert auc([0.1, 0.2], [1, 1]) is None
 
 
-def test_binary_confusion_matrix_is_consistent(trained):
-    m = trained["metrics"]
-    for who in ("model", "baseline", "linear_trend"):
-        b = m["classification"][who]["alert_or_above"]
-        c = b["confusion"]
-        assert c["tn"] + c["fp"] + c["fn"] + c["tp"] == m["test_rows"]
-        assert c["tp"] + c["fn"] == m["alert_or_above"]["events"]
-        assert b["accuracy"] == pytest.approx((c["tp"] + c["tn"]) / m["test_rows"])
-        assert b["recall"] == pytest.approx(m["alert_or_above"][who]["recall"])
-        assert b["precision"] == pytest.approx(m["alert_or_above"][who]["precision"])
-        p, r = b["precision"], b["recall"]
-        assert b["f1"] == pytest.approx(2 * p * r / (p + r))
-        assert 0 <= b["auc"] <= 1
-
-
-def test_four_level_confusion_matrix(trained):
-    m = trained["metrics"]
-    rl = m["classification"]["model"]["risk_level"]
-    cm = np.array(rl["confusion_matrix"])
-    assert cm.shape == (4, 4) and cm.sum() == m["test_rows"]
-    assert rl["accuracy"] == pytest.approx(np.trace(cm) / m["test_rows"])
-    assert 0 <= rl["macro_f1"] <= 1
-    # Alert-or-above counts agree with the 4-level matrix
-    assert cm[1:, 1:].sum() == m["classification"]["model"]["alert_or_above"]["confusion"]["tp"]
-
-
-def test_model_ranks_rises_better_than_no_change(trained):
-    c = trained["metrics"]["classification"]
-    assert c["model"]["alert_or_above"]["auc"] > 0.5
-    assert c["model"]["alert_or_above"]["f1"] >= c["baseline"]["alert_or_above"]["f1"]
+def test_model_beats_no_change_on_every_prediction_metric(trained):
+    m, base = trained["metrics"], trained["metrics"]["baseline"]
+    assert m["nse"] > base["nse"]
+    assert m["willmott_d"] > base["willmott_d"]
+    assert m["persistence_index"] > base["persistence_index"]
 
 
 def test_klang_stations_run_end_to_end(tmp_path):

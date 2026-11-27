@@ -105,7 +105,26 @@ The app has four tabs and runs in **English, Bahasa Melayu and Chinese**.
   (-9999 / -8888) count as no data.
 - **Rain bands** (1-hour rolling total from JPS): no rain 0 mm; light ≤ 10; moderate ≤ 30;
   heavy ≤ 60; very heavy > 60 mm/h. These cut-offs are provisional and still to be confirmed
-  against MetMalaysia. Rain does not change the river risk level.
+  against MetMalaysia. Measured rain does not change the river risk level.
+- **Rain forecast, 3 days ahead** (`logger/jps_logger/weather.py`, every 6 hours): Open-Meteo
+  (mm and the share of 8 weather models expecting rain) and MET Malaysia (official forecast text
+  per district, and warnings), stored in `weather_outlook` (`supabase/weather.sql`) and archived
+  in `data/forecast/`. The river risk level stays as measured; a separate **outlook** is one
+  level higher when very heavy rain (>= 20 mm/day, ETCCDI R20mm) is forecast with >= 70% of
+  models agreeing AND MET Malaysia also expects rain or has a warning out (or a MET Buruk/Bahaya
+  warning is in force), while the river is at Alert or within 80% of it
+  (`packages/flood_core/lib/src/risk/joint_risk.dart`). Each reason names its source
+  ([docs/references.md](docs/references.md)). What the real logs show:
+  [docs/rain-forecast-evidence.md](docs/rain-forecast-evidence.md). Plan to the W10 performance
+  analysis and panel demo: [docs/roadmap.md](docs/roadmap.md); progress by day:
+  [docs/daily-updates.md](docs/daily-updates.md).
+- **Reported incidents from JKR** (`logger/jps_logger/jkr.py`, every hour, `log_jkr.yml`): the
+  current floods, landslides and road collapses on JKR's public portal (bencana.jkr.gov.my),
+  with position, district, status (e.g. "Water Rising"), road status and flood depth, plus the
+  3 nearest JPS river stations and rain gauges within 15 km and what they read at that moment
+  (`supabase/jkr.sql`, archived in `data/incidents/`). The officer's name and phone numbers in
+  the portal's records are never stored. The 6-hourly rain forecast also covers each current
+  incident location (ids `JKR-<id>`), so the areas being reported get their own forecast.
 - **Push alerts.** The phone signs in to Supabase anonymously (no account) and registers its
   Firebase token and its rules. Every 15 minutes Supabase's `pg_cron` calls the `send-alerts`
   Edge Function. A notification is sent:
@@ -153,11 +172,11 @@ thresholds.
      is kept.
    - River-level gaps of up to **2 hours** inside the series are filled by straight-line
      interpolation. Longer gaps stay missing.
-2. **Features: 13 inputs per hour.**
+2. **Features: 14 inputs per hour.**
 
    | Group | Inputs |
    |---|---|
-   | This station (9) | `level_above_normal`, `level_change_1h`, `level_change_3h`, `same_time_12h_ago`, `same_time_25h_ago`, `rain_sum_1h`, `rain_sum_3h`, `rain_sum_6h`, `rain_sum_24h` |
+   | This station (10) | `level_above_normal`, `level_change_1h`, `level_change_2h`, `level_change_3h`, `same_time_12h_ago`, `same_time_25h_ago`, `rain_sum_1h`, `rain_sum_3h`, `rain_sum_6h`, `rain_sum_24h` |
    | Upstream stations (4, averaged) | `up_level_change_1h`, `up_level_change_3h`, `up_rain_sum_3h`, `up_rain_sum_6h` (left empty when a station has no upstream stations) |
 
    **What the river did one cycle ago.** `same_time_12h_ago` is the change over the 3 hours
@@ -225,12 +244,14 @@ thresholds.
      - "no change" (the river stays where it is);
      - the straight-line trend used by the existing FloodWatch app (a line through the last
        4 hourly levels, extended 3 hours).
-   - Reported measures: MAE and RMSE, plus recall, precision, missed events and false
-     alarms for *Alert or above*.
-   - The same forecasts are also scored as a classification of the risk level they lead to
-     (`classification` in `metrics.json`): a confusion matrix, accuracy, precision, recall,
-     F1 and AUC for *Alert or above*, and a 4×4 confusion matrix with accuracy and macro F1
-     for the four levels.
+   - Reported measures are **prediction metrics only** (`ml/flood_ml/metrics.py`; the forecast
+     is a water level, not a yes/no answer): MAE, RMSE, Nash-Sutcliffe efficiency (NSE),
+     Willmott's index of agreement (d), persistence index (PI: 0 = no better than "no change"),
+     bias and peak error. They are given overall, on high-water hours, and per state.
+     NSE and d are worked out within each station, because river levels use local datums.
+     Sources: `docs/literature.md`. Accuracy, precision, recall, F1, AUC and confusion
+     matrices were removed in Nov 2026 at the supervisor's request (older tables below
+     still show them).
    - **Model comparison (`compare.py`).** 16 methods on the same inputs, split and metrics:
      no change, the FloodWatch line, ridge regression, SVR, k-nearest neighbours, random
      forest, extra trees, histogram gradient boosting, MLP, LSTM and GRU (only when PyTorch
@@ -290,6 +311,19 @@ pip install -r requirements.txt
 python -m flood_ml.run --practice            # writes ml/output/{model,metrics,forecast}.json
 ```
 
+On real JPS readings (archive in `data/` plus, with the Supabase variables set, the last 30
+days from the database):
+
+```powershell
+cd logger
+python -m jps_logger.export --since 2026-11-17 --stations ..\ml\stations_training.json --out ..\ml\readings.csv
+cd ..\ml
+python -m flood_ml.run --stations stations_training.json --readings readings.csv --weather ..\data\forecast
+```
+
+Retraining, then running the debug app on live data, step by step:
+[docs/dev-roadmap.md](docs/dev-roadmap.md#how-to-retrain-and-run-the-app-on-real-jps-data).
+
 ---
 
 ## Tech stack
@@ -321,7 +355,7 @@ supabase/             SQL (tables, RLS, views, cron), Edge Functions, database t
 places/               Relief centres and resource points (CSV), uploaded to Supabase by CI
 data/                 Daily archive of logged readings (*.csv.gz), written by CI
 docs/                 Development log, daily updates, UI test plan, forecast switch plan
-.github/workflows/    log_jps, archive_jps, places, test
+.github/workflows/    log_jps, log_weather, log_jkr, archive_jps, places, test
 ```
 
 ---
@@ -466,6 +500,10 @@ You only need this to run your own live backend. Full details and history are in
    13. `supabase/shelter.sql`: capacity- and wheelchair-aware centre allocation, supplies needed vs stock
    14. `supabase/report_triage.sql`: 3 reports/hour limit, credibility score, report clusters for staff
 
+   Weather and incidents (public data, read by everyone, written only by the logger):
+   15. `supabase/weather.sql`: 3-day rain forecast (Open-Meteo, MET Malaysia) and the outlook
+   16. `supabase/jkr.sql`: JKR disaster incidents and the JPS gauges near each one
+
    Then turn on Authentication → *Allow anonymous sign-ins*.
 2. **GitHub repository secrets:** `SUPABASE_URL` and `SUPABASE_SECRET_KEY`. The secret key
    can write to the database, so never put it in the app, in code or in screenshots. The
@@ -518,13 +556,34 @@ checks are in [docs/ui_test_plan.md](docs/ui_test_plan.md).
 - The live AI forecast is still a **practice rule**, not the trained model, until enough real
   readings have been logged (logging began 17 Nov 2026). Model results printed from practice
   data are not findings.
-- The real model will first cover **one station** (Taman Sri Muda, Sg. Klang). The upstream
-  links still need to be checked on a map.
-- The model has a fixed **3-hour horizon** and gives a single likely range. It does not give a
-  flood probability or a rise speed yet.
+- The real model is trained on, and forecasts, all 143 stations in `ml/stations_training.json`.
+  Only Taman Sri Muda (`BKLG0002L`) has upstream links (Puchong Drop and USJ 1), and those
+  still need to be checked on a map. A few stations send single faulty readings (e.g. 32.8 → 16.0 → 32.7 m) that cleaning
+  does not yet remove; see [docs/dev-roadmap.md](docs/dev-roadmap.md).
+- The level model has a fixed **3-hour horizon** and gives a single likely range.
+- The **chance of flood in the next 24 hours** (`ml/flood_ml/probability.py`) is a separate
+  XGBoost classifier per JPS level, calibrated on the newest day it did not learn from. "Flood"
+  in the headline means the river reaching **Warning (Amaran)**; Alert and Danger are shown
+  beside it, never higher than the level below. The app says it as a band (Low < 10%,
+  Moderate 10-30%, High 30-60%, Very high >= 60%) with up to 3 reasons for and 1 against,
+  grouped from the TreeSHAP values (e.g. "Moderate rain without a break for 7 hours").
+  On unseen test days (23-24 Nov) the Warning chances matched what happened (stated 17% /
+  41% / 72%, happened 21% / 39% / 71%), but are only slightly better than
+  always stating the average rate (Brier skill 0.07); Alert is better (skill 0.15); Danger is barely better than the
+  average rate (skill 0.01), so it is shown small. Treat all three as rough until more days
+  are logged; the check is in `docs/rain-forecast-evidence.md`, section 3b.
 - If a sensor is offline for **over 2 hours**, that station gets no forecast. Missing rain
   gauges are not replaced by nearby ones yet.
-- The forecast file is not signed.
+- The forecast file is signed (Ed25519, `ml/flood_ml/sign.py`), but the app trusts no key until
+  the real one is added, so it shows the practice forecast for now.
+- Inputs are chosen on the newest training days, each predicted by a model trained only on
+  earlier days (`train.choose_inputs`), judged first on high-water hours and new Alert crossings
+  (`scoring.py`). Candidates: observed only, + rain history (continuous rain, antecedent
+  precipitation index), + next-day or 3-day forecast, and a residual correction that can only
+  switch itself on when it helps (`residual.py`). On the first 8 logged days the forecast did
+  not help on unseen days, so the 3 h model uses observed readings only; it is re-decided as
+  more days are logged. Why each input: [docs/literature.md](docs/literature.md).
+  MET Malaysia publishes no past forecasts, so its inputs fill in only as the logger runs.
 
 **Data**
 - Data comes from public JPS pages and APIs, which can be late, wrong, stuck or blocked.

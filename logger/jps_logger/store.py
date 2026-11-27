@@ -39,12 +39,12 @@ class Store:
                 raise RuntimeError(f"Supabase refused {table} rows: HTTP {r.status_code} {r.text[:300]}")
         return len(rows)
 
-    def select_all(self, table, columns, filters):
+    def select_all(self, table, columns, filters, order="observed_at.asc,station_code.asc"):
         """All matching rows, page by page, oldest first.
         filters: list of (column, condition), e.g. [("observed_at", "gte.2026-11-17T00:00:00Z")]."""
         out, offset = [], 0
         while True:
-            params = [("select", columns), ("order", "observed_at.asc,station_code.asc"),
+            params = [("select", columns), ("order", order),
                       ("limit", PAGE), ("offset", offset), *list(filters)]
             r = self.http.get(f"{self.url}/rest/v1/{table}", params=params, headers=self._headers(), timeout=60)
             if r.status_code >= 300:

@@ -8,23 +8,105 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .ensemble import TreeEnsemble
-from .features import HORIZON_H, LINEAR_TREND, TARGET, risk_level
+from .ensemble import TreeEnsemble, validation_split
+from .features import BASE_FEATURES, FEATURES, HISTORY_FEATURES, HORIZON_H, LINEAR_TREND, TARGET
+from .residual import ResidualModel
+from .metrics import forecast_metrics
+from .scoring import choose, flood_scores, high_water
+from .weather import NEXT_DAY_FEATURES
+
+# Which weather-forecast inputs the model gets is decided on validation, like the
+# ensemble weights: the forecast has to earn its place. On the first 8 logged days the
+# 3-day inputs made the test error worse (test days were wetter than every training
+# day, and trees cannot extrapolate; docs/rain-forecast-evidence.md), so this choice
+# is made again on every run as more days are logged.
+INPUT_SETS = {
+    "observed only": BASE_FEATURES,
+    "observed + rain history": BASE_FEATURES + HISTORY_FEATURES,
+    "observed + next-day forecast": BASE_FEATURES + HISTORY_FEATURES + NEXT_DAY_FEATURES,
+    "observed + 3-day forecast": FEATURES,
+}
 
 
-def time_split(feats, test_fraction=0.2):
-    """Oldest data trains, newest data tests. Training rows whose 3-hour
-    target reaches into the test period are dropped."""
-    rows = feats.dropna(subset=[TARGET, "level_above_normal"])
+def time_split(feats, test_fraction=0.2, target=TARGET, horizon_h=HORIZON_H):
+    """Oldest data trains, newest data tests. Training rows whose target
+    (horizon_h hours ahead) reaches into the test period are dropped."""
+    rows = feats.dropna(subset=[target, "level_above_normal"])
     cutoff = rows["time"].quantile(1 - test_fraction)
-    train = rows[rows["time"] + pd.Timedelta(hours=HORIZON_H) < cutoff]
+    train = rows[rows["time"] + pd.Timedelta(hours=horizon_h) < cutoff]
     test = rows[rows["time"] >= cutoff]
     return train, test, cutoff
 
 
-def train_model(train, fast=False):
-    """The weighted tree ensemble (XGBoost, LightGBM, CatBoost, random forest)."""
-    return TreeEnsemble.fit(train, fast=fast)
+RESIDUAL = "observed + residual correction (rain history, forecast)"
+
+
+def candidate_sets(train):
+    """{name: columns} of INPUT_SETS, without inputs that have no value in `train`;
+    a set that then equals an earlier one is skipped. RESIDUAL is added when it has
+    something to correct with (its columns are those of its base model)."""
+    sets, seen = {}, set()
+    for name, cols in INPUT_SETS.items():
+        cols = [c for c in cols if train[c].notna().any()]
+        if tuple(cols) not in seen:
+            seen.add(tuple(cols))
+            sets[name] = cols
+    if len(sets) > 1:
+        sets[RESIDUAL] = sets["observed only"]
+    return sets
+
+
+def fit_candidate(name, cols, rows, fast=False, target=TARGET, horizon_h=HORIZON_H):
+    if name == RESIDUAL:
+        return ResidualModel.fit(rows, fast=fast, base_features=cols, target=target, horizon_h=horizon_h)
+    return TreeEnsemble.fit(rows, fast=fast, features=cols, target=target, horizon_h=horizon_h)
+
+
+VALIDATION_DAYS = 3  # newest training days used, one at a time, to choose the inputs
+
+
+def validation_folds(train, horizon_h=HORIZON_H, days=VALIDATION_DAYS):
+    """[(fit rows, check rows)]: for each of the newest `days` Malaysia days of `train`, the
+    rows whose target ends before that day, and that day's rows (rolling origin). Falls back
+    to one validation_split when there are too few days."""
+    day = train["time"].dt.tz_convert("Asia/Kuala_Lumpur").dt.normalize()
+    folds = []
+    for d in sorted(day.unique())[-days:]:
+        fit_rows = train[train["time"] + pd.Timedelta(hours=horizon_h) < d.tz_convert("UTC")]
+        check = train[day == d]
+        if len(fit_rows) >= 100 and len(check) >= 30 and fit_rows["time"].dt.date.nunique() >= 2:
+            folds.append((fit_rows, check))
+    if not folds:
+        inner, val = validation_split(train, horizon_h=horizon_h)
+        if len(inner) >= 100 and len(val) >= 30:
+            folds = [(inner, val)]
+    return folds
+
+
+def choose_inputs(train, target=TARGET, horizon_h=HORIZON_H, fast=True):
+    """(name, columns, {name: validation flood scores}): the candidate that does best on
+    the newest training days (never the test set), each day predicted by a model trained
+    only on earlier rows, pooled, and judged by the flood-first rule in scoring.choose
+    (high-water error, with a guard on overall error)."""
+    sets = candidate_sets(train)
+    folds = validation_folds(train, horizon_h)
+    if len(sets) == 1 or not folds:
+        return "observed only", sets["observed only"], {}
+    check = pd.concat([c for _, c in folds])
+    scores = {}
+    for name, cols in sets.items():
+        pred = np.concatenate([fit_candidate(name, cols, f, fast, target, horizon_h).predict(c) for f, c in folds])
+        scores[name] = flood_scores(pred, check, target)
+    best = choose(scores)
+    return best, sets[best], scores
+
+
+def train_model(train, fast=False, features=None, input_set=None):
+    """The weighted tree ensemble (XGBoost, LightGBM, CatBoost, random forest), or the
+    residual-corrected one when input_set is RESIDUAL."""
+    if input_set == RESIDUAL:
+        return ResidualModel.fit(train, fast=fast, base_features=features)
+    return TreeEnsemble.fit(train, fast=fast, features=features)
 
 
 def auc(score, label):
@@ -40,77 +122,15 @@ def auc(score, label):
     return float((ranks[label].sum() - pos * (pos + 1) / 2) / (pos * neg))
 
 
-def _ratio(a, b):
-    return a / b if b else None
-
-
-def _f1(p, r):
-    if p is None or r is None:
-        return None
-    return 2 * p * r / (p + r) if p + r > 0 else 0.0
-
-
-def classification_metrics(pred_change, test, stations):
-    """Scores a 3-hour level forecast as a classification of the risk level it
-    leads to, against the risk level the river really reached.
-
-    - "alert_or_above": binary (Alert or higher vs Normal). Confusion counts,
-      accuracy, precision, recall, F1 and AUC. The AUC score is how far the
-      forecast level is above the station's Alert line, in metres.
-    - "risk_level": the 4 levels (0 Normal .. 3 Danger). 4x4 confusion matrix
-      (rows = actual, columns = forecast), accuracy and macro F1."""
-    by_id = {s["id"]: s for s in stations}
-    sts = [by_id[s] for s in test["station_id"]]
-    now = test["river_level_m"].to_numpy(dtype=float)
-    actual = test[TARGET].to_numpy(dtype=float)
-    pred = np.asarray(pred_change, dtype=float)
-    true_lv = np.array([risk_level(l + a, s) for l, a, s in zip(now, actual, sts)])
-    pred_lv = np.array([risk_level(l + p, s) for l, p, s in zip(now, pred, sts)])
-    true_hi, pred_hi = true_lv >= 1, pred_lv >= 1
-    tp = int(np.sum(pred_hi & true_hi))
-    fp = int(np.sum(pred_hi & ~true_hi))
-    fn = int(np.sum(~pred_hi & true_hi))
-    tn = int(np.sum(~pred_hi & ~true_hi))
-    n = len(test)
-    precision, recall = _ratio(tp, tp + fp), _ratio(tp, tp + fn)
-    margin = now + pred - np.array([s["alert"] for s in sts])
-
-    cm = np.zeros((4, 4), dtype=int)
-    for t, p in zip(true_lv, pred_lv):
-        cm[t, p] += 1
-    f1s = []
-    for k in range(4):
-        if cm[k, :].sum() == 0 and cm[:, k].sum() == 0:
-            continue  # level never seen nor forecast: left out of the macro average
-        pk, rk = _ratio(int(cm[k, k]), int(cm[:, k].sum())), _ratio(int(cm[k, k]), int(cm[k, :].sum()))
-        f1s.append(_f1(pk or 0.0, rk or 0.0))
-    return {
-        "alert_or_above": {
-            "confusion": {"tn": tn, "fp": fp, "fn": fn, "tp": tp},
-            "accuracy": _ratio(tp + tn, n),
-            "precision": precision,
-            "recall": recall,
-            "f1": _f1(precision, recall),
-            "auc": auc(margin, true_hi),
-        },
-        "risk_level": {
-            "labels": ["Normal", "Alert", "Warning", "Danger"],
-            "confusion_matrix": cm.tolist(),
-            "accuracy": _ratio(int(np.trace(cm)), n),
-            "macro_f1": float(np.mean(f1s)) if f1s else None,
-        },
-    }
-
-
-def regression_metrics(pred_change, test):
-    actual = test[TARGET].to_numpy(dtype=float)
+def regression_metrics(pred_change, test, target=TARGET):
+    """All prediction metrics (metrics.py) plus skill vs "no change" on MAE and the
+    band that holds 80% of errors."""
+    actual = test[target].to_numpy(dtype=float)
     err = np.asarray(pred_change, dtype=float) - actual
     mae_base = float(np.mean(np.abs(actual)))
-    mae = float(np.mean(np.abs(err)))
-    return {
-        "mae_m": mae,
-        "rmse_m": float(np.sqrt(np.mean(err ** 2))),
-        "skill_vs_baseline": 1 - mae / mae_base if mae_base > 0 else None,
+    m = forecast_metrics(pred_change, test, target)
+    return m | {
+        "skill_vs_baseline": 1 - m["mae_m"] / mae_base if mae_base > 0 else None,
         "band_m": float(np.quantile(np.abs(err), 0.8)),
     }
 
@@ -124,65 +144,43 @@ def linear_trend_prediction(test):
 
 
 def evaluate(model, test, stations):
-    by_id = {s["id"]: s for s in stations}
+    """Scores the level forecast with prediction metrics only (metrics.py), against
+    two baselines: "no change" and the FloodWatch straight-line trend."""
     pred = model.predict(test)
-    actual = test[TARGET].to_numpy()
-    err = pred - actual
-    mae, mae_base = float(np.mean(np.abs(err))), float(np.mean(np.abs(actual)))
-    # Straight-line baseline. Where it has too few recent readings it gives no
-    # forecast; it is then scored as "no change" and counted in fallback_rows.
     trend, fallback = linear_trend_prediction(test)
-    err_lin = trend - actual
-    mae_lin = float(np.mean(np.abs(err_lin)))
-    now = test["river_level_m"].to_numpy()
-    sts = [by_id[s] for s in test["station_id"]]
-    true_hi = np.array([risk_level(l + a, s) >= 1 for l, a, s in zip(now, actual, sts)])
-    pred_hi = np.array([risk_level(l + p, s) >= 1 for l, p, s in zip(now, pred, sts)])
-    base_hi = np.array([risk_level(l, s) >= 1 for l, s in zip(now, sts)])
-    lin_hi = np.array([risk_level(l + c, s) >= 1 for l, c, s in zip(now, trend, sts)])
-
-    def pr(guess):
-        tp = int(np.sum(guess & true_hi))
-        return {
-            "recall": tp / int(true_hi.sum()) if true_hi.any() else None,
-            "precision": tp / int(guess.sum()) if guess.any() else None,
-            "missed": int(np.sum(~guess & true_hi)),
-            "false_alarms": int(np.sum(guess & ~true_hi)),
-        }
-
+    m = regression_metrics(pred, test)
+    base = forecast_metrics(np.zeros(len(test)), test, TARGET)
+    lin = forecast_metrics(trend, test, TARGET)
     return {
         "horizon_hours": HORIZON_H,
         "model": model.describe(),
         "test_rows": int(len(test)),
-        "mae_m": mae,
-        "rmse_m": float(np.sqrt(np.mean(err ** 2))),
-        "baseline_mae_m": mae_base,
-        "baseline_rmse_m": float(np.sqrt(np.mean(actual ** 2))),
-        "skill_vs_baseline": 1 - mae / mae_base if mae_base > 0 else None,
-        "linear_trend": {
-            "mae_m": mae_lin,
-            "rmse_m": float(np.sqrt(np.mean(err_lin ** 2))),
-            "fallback_rows": int(fallback.sum()),
-        },
-        "skill_vs_linear_trend": 1 - mae / mae_lin if mae_lin > 0 else None,
-        "alert_or_above": {"events": int(true_hi.sum()), "model": pr(pred_hi), "baseline": pr(base_hi),
-                           "linear_trend": pr(lin_hi)},
-        "band_m": float(np.quantile(np.abs(err), 0.8)),  # 80% of test errors are within this
-        # Supervisor's classification view of the same forecasts (confusion
-        # matrix, accuracy, precision, recall, F1, AUC).
-        "classification": {
-            "model": classification_metrics(pred, test, stations),
-            "baseline": classification_metrics(np.zeros(len(test)), test, stations),
-            "linear_trend": classification_metrics(trend, test, stations),
-        },
+        **{k: v for k, v in m.items() if k != "rows"},
+        "baseline_mae_m": base["mae_m"],
+        "baseline_rmse_m": base["rmse_m"],
+        "baseline": base,
+        # Straight-line baseline. Where it has too few recent readings it gives no
+        # forecast; it is then scored as "no change" and counted in fallback_rows.
+        "linear_trend": lin | {"fallback_rows": int(fallback.sum())},
+        "skill_vs_linear_trend": 1 - m["mae_m"] / lin["mae_m"] if lin["mae_m"] > 0 else None,
+        "high_water": high_water_metrics(pred, test),
         "by_state": by_state(pred, test, stations),
     }
 
 
+def high_water_metrics(pred_change, test, target=TARGET):
+    """The same metrics on high-water hours only (scoring.high_water: the river at least
+    half-way from Normal to Alert, or reaching Alert), where a flood forecast matters."""
+    hw = high_water(test, test[target].to_numpy(float))
+    if not hw.any():
+        return {"rows": 0}
+    return forecast_metrics(np.asarray(pred_change, float)[hw], test[hw], target)
+
+
 def by_state(pred, test, stations):
-    """The model's main measures for each state's stations on their own, so a good
-    overall score cannot hide a state the model does badly in ("state" in the
-    stations file; Selangor when not given)."""
+    """The model's metrics for each state's stations on their own, so a good overall
+    score cannot hide a state the model does badly in ("state" in the stations file;
+    Selangor when not given)."""
     state = {s["id"]: s.get("state", "Selangor") for s in stations}
     states = test["station_id"].map(state).to_numpy()
     out = {}
@@ -190,18 +188,12 @@ def by_state(pred, test, stations):
         mask = states == name
         part = test[mask]
         p = np.asarray(pred, dtype=float)[mask]
-        reg = regression_metrics(p, part)
-        cls = classification_metrics(p, part, stations)["alert_or_above"]
+        reg = forecast_metrics(p, part, TARGET)
         out[name] = {
             "stations": int(part["station_id"].nunique()),
             "test_rows": int(mask.sum()),
-            "mae_m": reg["mae_m"],
+            **{k: v for k, v in reg.items() if k != "rows"},
             "baseline_mae_m": float(np.mean(np.abs(part[TARGET].to_numpy(dtype=float)))),
-            "alert_or_above_events": int(cls["confusion"]["tp"] + cls["confusion"]["fn"]),
-            "recall": cls["recall"],
-            "precision": cls["precision"],
-            "f1": cls["f1"],
-            "auc": cls["auc"],
         }
     return out
 

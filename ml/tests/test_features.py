@@ -97,6 +97,7 @@ def test_feature_values():
     r = f.iloc[3]
     assert r["level_above_normal"] == 2.0
     assert r["level_change_1h"] == 1.0
+    assert r["level_change_2h"] == 1.5  # 12.0 - 10.5
     assert r["level_change_3h"] == 2.0
     assert r["rain_sum_1h"] == 4
     assert r["rain_sum_3h"] == 9

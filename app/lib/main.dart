@@ -62,6 +62,8 @@ Future<void> main() async {
               RemoteForecastSource(Uri.parse('${supabaseConfig.url}/storage/v1/object/public/forecasts/forecast.json.sig'), deviceHttp),
             ),
             PracticeForecastSource(() => controller.statuses)),
+    // Live: weather_outlook in Supabase (Open-Meteo + MET Malaysia, every 6 hours).
+    rainOutlook: api == null ? null : LiveRainOutlookSource(api),
     // Created once per app start, so an unlock lasts until the app is closed.
     lock: HouseholdLockService(PhoneSettingsStore('household_lock')),
     phone: DevicePhoneLockChecker(),

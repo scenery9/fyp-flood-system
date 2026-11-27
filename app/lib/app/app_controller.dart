@@ -38,6 +38,7 @@ class AppDeps {
     this.reports,
     this.contacts,
     this.refreshEvery,
+    this.rainOutlook,
   })  : heights = heights ?? HeightAlertStore(InMemorySettingsStore()),
         flagsStore = flagsStore ?? InMemorySettingsStore(),
         routeStore = routeStore ?? InMemorySettingsStore(),
@@ -51,6 +52,9 @@ class AppDeps {
   final SettingsStore contactStore;
   final Table<EvacuationPoint> centres;
   final ForecastSource forecastSource;
+
+  /// 3-day rain outlook per station (Open-Meteo + MET Malaysia); null: none.
+  final RainOutlookSource? rainOutlook;
   final HouseholdLockService lock;
   final PhoneLockChecker phone;
   final UrlOpener opener;
@@ -162,7 +166,10 @@ class AppController extends ChangeNotifier {
         forecastService = ForecastService(source: deps.forecastSource),
         routeCache = RouteCache(deps.routeStore),
         locationConsent = LocationConsentService(deps.flagsStore) {
-    home = HomeService(monitoring: monitoring, followed: followed);
+    home = HomeService(
+        monitoring: monitoring,
+        followed: followed,
+        jointRisk: deps.rainOutlook == null ? null : JointRiskService(deps.rainOutlook!));
     reports = PublicReportsService(deps.reports ??
         LocalReportsBackend(deps.reportsStore, centreName: (id) {
           for (final c in centres) {
@@ -398,6 +405,9 @@ class AppController extends ChangeNotifier {
   /// For the Home AI forecast card and its "Why" page only. With live data
   /// this may be the labelled practice forecast (see PracticeForecastSource).
   StationForecast? cardForecastFor(String stationId) => forecast?.forecasts[stationId];
+
+  /// River level joined with the 3-day rain outlook (null: no outlook loaded).
+  JointAssessment? jointFor(String stationId) => homeData?.joint[stationId];
 
   /// Everywhere else (alerts, lists, map, station page). With live data a
   /// practice forecast is left out: made-up numbers must not look like a

@@ -185,6 +185,27 @@ void main() {
       expect(find.text('1. Learns from the past'), findsOneWidget);
     });
 
+    testWidgets('flood chance: %, what flood means, other levels and plain reasons', (tester) async {
+      await TestApp(followed: const ['JHR-BULOH']).start(tester);
+      await reveal(tester, find.text('High chance of flood in the next 24 hours: 35%'));
+      expect(find.text('Flood here means the river reaching the JPS Warning level'), findsOneWidget);
+      expect(find.text('Alert: reached · Danger 8%'), findsOneWidget);
+      // Home shows the top 2 reasons for and 1 against
+      expect(find.text('Moderate rain without a break for 7 hours (96 mm in the last 24 hours)'), findsOneWidget);
+      expect(find.text('River is 85% of the way to Warning'), findsOneWidget);
+      expect(find.text('Upstream river rose 0.41 m in 3 hours'), findsNothing);
+      expect(find.text('Little rain forecast for the next 24 hours (3 mm)'), findsOneWidget);
+      await tapIt(tester, find.text('Why does the AI say this?').first);
+      await reveal(tester, find.text('Chance of flood in the next 24 hours'));
+      expect(find.text('Upstream river rose 0.41 m in 3 hours'), findsOneWidget); // all 3 on the Why page
+    });
+
+    testWidgets('a river already past Warning: the headline names the level reached', (tester) async {
+      await TestApp().start(tester);
+      await reveal(tester, find.text('River is at Danger level now: flooding is possible')); // JHR-AWAT
+      expect(find.textContaining('chance of flood'), findsNothing);
+    });
+
     testWidgets('area with no forecast says so', (tester) async {
       await TestApp(followed: const ['SGR-RANTAU']).start(tester);
       expect(inAreaCard('Outdated reading (>3h) — paused for alerts'), findsOneWidget); // JPS has not updated it

@@ -7,6 +7,8 @@ import '../../widgets/read_aloud_button.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../more/info_screens.dart';
+import 'flood_chance_card.dart';
+import 'rain_outlook_section.dart';
 
 /// "Why does the AI say this?": the readings that moved the forecast most.
 class ForecastWhyScreen extends StatelessWidget {
@@ -29,7 +31,9 @@ class ForecastWhyScreen extends StatelessWidget {
               child: Text(app.forecast?.unavailableReason ?? context.tr('No forecast for this area.', 'Tiada ramalan untuk kawasan ini.'),
                   style: context.text.bodyLarge),
             ),
-          )
+          ),
+        if (f == null || s == null)
+          RainOutlookSection(stationId: stationId)
         else ...[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: kMargin),
@@ -72,6 +76,8 @@ class ForecastWhyScreen extends StatelessWidget {
               ]),
             ),
           ),
+          FloodChanceCard(forecast: f),
+          RainOutlookSection(stationId: stationId),
           NoteText(context.tr(
               'The AI learned from past rainfall and river readings. It says which readings pushed this forecast up or down the most.',
               'AI belajar daripada bacaan hujan dan sungai yang lalu. Ia menunjukkan bacaan yang paling menaikkan atau menurunkan ramalan ini.')),

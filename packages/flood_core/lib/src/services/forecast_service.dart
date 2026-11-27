@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../data/supabase_api.dart' show HttpSend;
 import '../errors.dart';
 import '../models/forecast.dart';
+import '../models/rain_outlook.dart';
 import '../models/risk_level.dart';
 import '../models/station.dart';
 import '../models/station_status.dart';
@@ -56,12 +57,13 @@ class FallbackForecastSource implements ForecastSource {
   }
 }
 
-/// Reads forecast.json (schema 1). Throws [ForecastFormatException] if it is wrong.
+/// Reads forecast.json (schema 1, or 2 = 1 plus each station's `rain_outlook` and the
+/// file's `inputs`). Throws [ForecastFormatException] if it is wrong.
 ForecastFile parseForecast(String body) {
   try {
     final j = jsonDecode(body);
     if (j is! Map) throw ForecastFormatException('Not a JSON object');
-    if (j['schema'] != 1) throw ForecastFormatException('Unsupported schema: ${j['schema']}');
+    if (j['schema'] != 1 && j['schema'] != 2) throw ForecastFormatException('Unsupported schema: ${j['schema']}');
     double num_(dynamic v, String name) {
       if (v is! num || v.isNaN || v.isInfinite) throw ForecastFormatException('Bad number: $name');
       return v.toDouble();
@@ -92,19 +94,83 @@ ForecastFile parseForecast(String body) {
                   feature: (f as Map)['feature'] as String,
                   value: f['value'] is num ? (f['value'] as num).toDouble() : null,
                   impactM: num_(f['impact_m'], 'impact_m')),
-          ]);
+          ],
+          rainOutlook: m['rain_outlook'] is Map ? RainOutlook.fromJson(id, m['rain_outlook'] as Map) : null,
+          floodChance: m['flood_chance'] is Map ? _chance(m['flood_chance'] as Map) : null);
     }
     return ForecastFile(
         generatedAt: DateTime.parse(j['generated_at'] as String).toUtc(),
         horizonHours: horizon,
         modelName: '${(j['model'] as Map?)?['name'] ?? 'unknown'}',
         isPracticeData: j['is_practice_data'] != false, // anything but an explicit false counts as practice
-        stations: stations);
+        stations: stations,
+        weatherForecastUsed: (j['inputs'] as Map?)?['weather_forecast_used'] == true,
+        chanceCheck: _check((j['chance_model'] as Map?)?['calibration']));
   } on ForecastFormatException {
     rethrow;
   } catch (e) {
     throw ForecastFormatException('Could not read forecast file');
   }
+}
+
+double? _prob(Object? c) {
+  if (c == null) return null;
+  if (c is! num || c < 0 || c > 1) throw ForecastFormatException('Bad chance');
+  return c.toDouble();
+}
+
+const _levelNames = {'alert': RiskLevel.alert, 'warning': RiskLevel.warning, 'danger': RiskLevel.danger};
+
+FloodChance _chance(Map m) {
+  final levels = <RiskLevel, LevelChance>{};
+  final rawLevels = m['levels'];
+  if (rawLevels is Map) {
+    for (final e in rawLevels.entries) {
+      final lv = _levelNames[e.key];
+      if (lv == null || e.value is! Map) continue;
+      final v = e.value as Map;
+      levels[lv] = LevelChance(already: v['already'] == true, chance: _prob(v['chance']));
+    }
+  }
+  // schema-2 files before the three levels: one Alert chance with already_at_alert
+  final old = !m.containsKey('headline_level');
+  final head = old ? RiskLevel.alert : (_levelNames[m['headline_level']] ?? RiskLevel.warning);
+  final already = old ? m['already_at_alert'] == true : m['already'] == true;
+  final chance = _prob(m['chance']);
+  if (old) levels[RiskLevel.alert] = LevelChance(already: already, chance: chance);
+  final inputs = <String, double>{
+    if (m['inputs_now'] is Map)
+      for (final e in (m['inputs_now'] as Map).entries)
+        if (e.value is num) '${e.key}': (e.value as num).toDouble(),
+  };
+  return FloodChance(
+    horizonHours: m['horizon_hours'] is int ? m['horizon_hours'] as int : 24,
+    headlineLevel: head,
+    already: already,
+    chance: chance,
+    levels: levels,
+    inputsNow: inputs,
+    capped: m['capped'] == true,
+    factors: [
+      for (final f in (m['factors'] as List?) ?? const [])
+        if ((f as Map)['impact_logodds'] is num)
+          ForecastFactor(
+              feature: f['feature'] as String,
+              value: f['value'] is num ? (f['value'] as num).toDouble() : null,
+              impactM: (f['impact_logodds'] as num).toDouble()),
+    ],
+  );
+}
+
+ChanceCheck? _check(Object? c) {
+  if (c is! Map) return null;
+  double? d(Object? v) => v is num ? v.toDouble() : null;
+  return ChanceCheck(
+      day: '${c['day'] ?? ''}',
+      events: c['events'] is int ? c['events'] as int : 0,
+      reliable: c['reliable'] == true,
+      brier: d(c['brier']),
+      brierClimatology: d(c['brier_climatology']));
 }
 
 /// Result of loading forecasts. When [forecasts] is empty, [unavailableReason] says why.
@@ -196,7 +262,7 @@ class ForecastService {
     }
     // A station without upstream readings gets no "upstream" reason: there is nothing to explain.
     final factors = [
-      ...raw.factors.where((f) => f.impactM.abs() >= 0.01 && !(f.value == null && isUpstreamInput(f.feature)))
+      ...raw.factors.where((f) => f.impactM.abs() >= 0.01 && !(f.value == null && (isUpstreamInput(f.feature) || isWeatherForecastInput(f.feature))))
     ]
       ..sort((a, b) => b.impactM.abs().compareTo(a.impactM.abs()));
     return StationForecast(
@@ -214,7 +280,10 @@ class ForecastService {
         reasons: [for (final f in factors.take(maxReasons)) describeFactor(f)],
         isPracticeData: file.isPracticeData,
         currentRisk: currentRisk,
-        factors: factors.take(maxReasons).toList());
+        factors: factors.take(maxReasons).toList(),
+        rainOutlook: raw.rainOutlook,
+        floodChance: raw.floodChance,
+        chanceCheck: file.chanceCheck);
   }
 
   RiskLevel _risk(double level, Thresholds t) {
@@ -229,9 +298,68 @@ class ForecastService {
     'rain_sum_3h': 'the last 3 hours',
     'rain_sum_6h': 'the last 6 hours',
     'rain_sum_24h': 'the last 24 hours',
+    'rain_sum_72h': 'the last 3 days',
   };
+
+  /// Weather-forecast inputs (Open-Meteo, MET Malaysia): the window they are about.
+  static const Map<String, String> _forecastWindows = {
+    'fc_rain_next_3h': 'the next 3 hours',
+    'fc_rain_prob_next_3h': 'the next 3 hours',
+    'fc_rain_day1_mm': 'the next 24 hours',
+    'fc_rain_prob_day1': 'the next 24 hours',
+    'met_rain_class_day1': 'the next 24 hours',
+    'fc_rain_day2_mm': '24-48 hours from now',
+    'fc_rain_prob_day2': '24-48 hours from now',
+    'met_rain_class_day2': '24-48 hours from now',
+    'fc_rain_day3_mm': '48-72 hours from now',
+    'fc_rain_prob_day3': '48-72 hours from now',
+    'met_rain_class_day3': '48-72 hours from now',
+  };
+
+  /// True for the inputs that come from a weather forecast rather than a reading.
+  static bool isWeatherForecastInput(String feature) =>
+      feature.startsWith('fc_') || feature.startsWith('met_') || feature == 'sources_agree_days_3d';
+
+  /// Rain-history inputs (observed at the station): how long and how much it has been raining.
+  static String? describeRainHistory(String feature, double? v) {
+    if (v == null) return null;
+    final n = v.round();
+    return switch (feature) {
+      'wet_hours_24h' => 'Rain fell in $n of the last 24 hours',
+      'consecutive_wet_hours' => n == 0 ? 'Not raining at the station now' : 'Raining without a break for $n hour(s)',
+      'wet_days_3d' => '$n of the last 3 days were rain days (1 mm or more)',
+      'api_7d' => 'Ground wetness from the last 7 days of rain: $n mm (older rain counts less)',
+      'fc_rain_day1_x_fill' => 'Forecast rain for the next 24 hours, weighted by how close the river is to Alert',
+      _ => null,
+    };
+  }
+
+  static String? _describeForecast(String feature, double? v) {
+    if (feature == 'fc_rain_day1_x_fill') return null;
+    if (!isWeatherForecastInput(feature)) return null;
+    if (v == null) return 'No weather forecast logged';
+    final w = _forecastWindows[feature];
+    if (feature == 'fc_rain_next_3h' || (feature.startsWith('fc_rain_day') && feature.endsWith('_mm'))) {
+      return v < 0.5 ? 'Forecast: almost no rain in $w' : 'Forecast: ${v.round()} mm of rain in $w';
+    }
+    if (feature.startsWith('fc_rain_prob')) return 'Forecast: ${v.round()}% of weather models expect rain in $w';
+    if (feature.startsWith('met_rain_class_day')) {
+      return 'MET Malaysia forecast: ${MetRainClass.fromNumber(v)?.labelEn ?? 'unknown'} in $w';
+    }
+    return switch (feature) {
+      'fc_rain_days_3d' => 'Rain forecast on ${v.round()} of the next 3 days',
+      'fc_rain_total_3d' => 'Forecast: ${v.round()} mm of rain over the next 3 days',
+      'met_thunder_days_3d' => 'MET Malaysia: thunderstorms forecast on ${v.round()} of the next 3 days',
+      'met_warning_level' => v < 0.5
+          ? 'No MET Malaysia rain warning'
+          : 'MET Malaysia warning in force: ${MetWarningLevel.fromNumber(v).labelEn}',
+      'sources_agree_days_3d' => 'Open-Meteo and MET Malaysia agree on ${v.round()} of the next 3 days',
+      _ => null,
+    };
+  }
   static const Map<String, String> _changeWindows = {
     'level_change_1h': 'the last hour',
+    'level_change_2h': 'the last 2 hours',
     'level_change_3h': 'the last 3 hours',
   };
 
@@ -260,7 +388,10 @@ class ForecastService {
     final effect = f.impactM > 0 ? 'raises the forecast' : 'lowers the forecast';
     final v = f.value;
     String what;
-    if (isUpstreamInput(f.feature) && v == null) {
+    final forecast = _describeForecast(f.feature, v) ?? describeRainHistory(f.feature, v);
+    if (forecast != null) {
+      what = forecast;
+    } else if (isUpstreamInput(f.feature) && v == null) {
       what = 'No upstream river readings';
     } else if (_upRainWindows.containsKey(f.feature) && v != null) {
       what = v < 0.5

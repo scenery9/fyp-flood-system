@@ -75,3 +75,9 @@ export 'src/data/live_centres.dart';
 export 'src/security/aes_gcm.dart';
 export 'src/security/family_location_crypto.dart';
 export 'src/security/forecast_signature.dart';
+
+// Weather forecast (Open-Meteo + MET Malaysia) joined with the river level
+export 'src/models/rain_outlook.dart';
+export 'src/risk/flood_explainer.dart';
+export 'src/risk/joint_risk.dart';
+export 'src/services/rain_outlook_source.dart';

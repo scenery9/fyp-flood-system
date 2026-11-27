@@ -10,6 +10,7 @@ import '../../widgets/river_gauge.dart';
 import '../more/saved_areas_screen.dart';
 import '../prepare/checklist_steps_screen.dart';
 import '../report/report_screen.dart';
+import 'flood_chance_card.dart';
 import 'forecast_why_screen.dart';
 import 'station_detail_screen.dart';
 
@@ -498,6 +499,10 @@ class ForecastCard extends StatelessWidget {
               context.tr('Likely between ${metres(f.lowM)} and ${metres(f.highM)}', 'Mungkin antara ${metres(f.lowM)} dan ${metres(f.highM)}', '可能介于 ${metres(f.lowM)} 至 ${metres(f.highM)}'),
               style: context.text.bodyMedium!.copyWith(fontFeatures: AppText.tabular),
             ),
+            if (f.floodChance != null) ...[
+              const SizedBox(height: 12),
+              FloodChanceSummary(key: const ValueKey('home-flood-chance'), chance: f.floodChance!, maxReasons: 2),
+            ],
             const SizedBox(height: 12),
             if (area.riverLevel != null) ForecastGauge(status: area, forecast: f),
             const SizedBox(height: 8),
@@ -611,7 +616,13 @@ class HighRiskCard extends StatelessWidget {
                       border: k == list.length - 1 ? null : Border(bottom: BorderSide(color: context.colors.divider))),
                   child: Row(children: [
                     Expanded(child: Text(list[k].station.name, style: context.text.bodyLarge)),
-                    RiskBadge(list[k].level),
+                    if (app.homeData!.isForecastOnly(list[k].station.id)) ...[
+                      Text(context.tr('Forecast', 'Ramalan', '预报'),
+                          style: context.text.bodyMedium!.copyWith(fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 6),
+                      RiskBadge(app.jointFor(list[k].station.id)!.outlook),
+                    ] else
+                      RiskBadge(list[k].level),
                     const SizedBox(width: 4),
                     const Chevron(),
                   ]),

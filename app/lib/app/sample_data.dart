@@ -110,12 +110,38 @@ class SampleForecastSource implements ForecastSource {
           ['rain_sum_3h', 42.0, 0.05],
           ['level_change_1h', 0.07, 0.03],
           ['up_level_change_3h', 0.35, 0.02],
-        ]),
+        ])
+          ..['flood_chance'] = {
+            'horizon_hours': 24, 'headline_level': 'warning', 'already': true, 'chance': null,
+            'levels': {
+              'alert': {'already': true, 'chance': null},
+              'warning': {'already': true, 'chance': null},
+              'danger': {'already': true, 'chance': null},
+            },
+            'factors': <Object>[],
+          },
         station('JHR-BULOH', 8.00, 8.52, 8.30, 8.71, [
           ['rain_sum_3h', 85.0, 0.30],
           ['up_level_change_3h', 0.41, 0.15],
           ['level_change_1h', 0.12, 0.08],
-        ]),
+        ])
+          ..['flood_chance'] = {
+            'horizon_hours': 24, 'headline_level': 'warning', 'already': false, 'chance': 0.35, 'capped': false,
+            'levels': {
+              'alert': {'already': true, 'chance': null},
+              'warning': {'already': false, 'chance': 0.35},
+              'danger': {'already': false, 'chance': 0.08},
+            },
+            'base_logodds': -2.4,
+            'factors': [
+              {'feature': 'consecutive_wet_hours', 'value': 7.0, 'impact_logodds': 0.7},
+              {'feature': 'rain_sum_6h', 'value': 85.0, 'impact_logodds': 0.4},
+              {'feature': 'fill_to_target', 'value': 0.85, 'impact_logodds': 0.5},
+              {'feature': 'up_level_change_3h', 'value': 0.41, 'impact_logodds': 0.2},
+              {'feature': 'fc_rain_day1_mm', 'value': 3.0, 'impact_logodds': -0.3},
+            ],
+            'inputs_now': {'consecutive_wet_hours': 7.0, 'rain_sum_6h': 85.0, 'rain_sum_24h': 96.0},
+          },
         station('JHR-SEGKECIL', 8.10, 8.35, 8.15, 8.55, [
           ['rain_sum_6h', 60.0, 0.15],
           ['level_change_3h', 0.30, 0.08],

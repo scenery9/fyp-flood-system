@@ -12,7 +12,7 @@ NOW = datetime(2026, 11, 17, 7, 20, tzinfo=timezone.utc)  # 15:20 Malaysia time
 
 
 def load(name):
-    return json.loads((FIX / name).read_text())
+    return json.loads((FIX / name).read_text(encoding="utf-8"))
 
 
 @pytest.fixture

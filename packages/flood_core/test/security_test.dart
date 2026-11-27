@@ -58,8 +58,12 @@ void main() {
       expect(verifyForecastSignature(body, sig(signature: keys['signature_without_prefix']), trustedKeys: trusted),
           rejected('does not match'));
     });
-    test('the app trusts no key until the real one is added: every file is rejected', () async {
-      expect(trustedForecastKeys, isEmpty);
+    test('the app trusts only its real key(s): each is a 32-byte Ed25519 public key; a test key is rejected', () async {
+      expect(trustedForecastKeys, isNotEmpty);
+      for (final key in trustedForecastKeys.values) {
+        expect(base64.decode(key), hasLength(32));
+      }
+      expect(trustedForecastKeys.containsKey(keys['test_key_id']), isFalse);
       expect(verifyForecastSignature(body, sigFile), rejected('Untrusted key id'));
     });
     test('malformed signature files are rejected', () async {

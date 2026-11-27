@@ -25,13 +25,12 @@ def test_same_test_set_and_metrics_for_every_method(result):
     for m in result["models"]:
         if "skipped" in m:
             continue
-        c = m["alert_or_above"]["confusion"]
-        assert c["tn"] + c["fp"] + c["fn"] + c["tp"] == result["test_rows"]
-        for key in ("mae_m", "rmse_m", "band_m"):
+        assert m["rows"] == result["test_rows"]
+        for key in ("mae_m", "rmse_m", "band_m", "peak_error_m"):
             assert m[key] >= 0
-        for key in ("accuracy", "precision", "recall", "f1", "auc"):
-            assert key in m["alert_or_above"]
-        assert len(m["risk_level"]["confusion_matrix"]) == 4
+        for key in ("nse", "willmott_d", "persistence_index", "bias_m"):
+            assert key in m
+        assert "alert_or_above" not in m and "risk_level" not in m
 
 
 def test_deep_models_are_scored_or_marked_skipped(result):

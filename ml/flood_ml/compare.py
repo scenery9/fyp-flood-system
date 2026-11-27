@@ -1,10 +1,11 @@
 """Compare many forecasting methods on the SAME data, inputs and time split.
 
 Every method predicts the change in river level over the next 3 hours from the
-same 13 inputs (FEATURES), is trained on the same oldest 80% of hours and is
+same inputs (FEATURES that have at least one value in the training rows: the
+weather-forecast inputs are empty without logged forecasts), is trained on the same oldest 80% of hours and is
 scored on the same newest 20%, with the same metrics:
-MAE, RMSE, skill vs "no change", and the risk-level classification view
-(confusion matrix, accuracy, precision, recall, F1, AUC).
+MAE, RMSE, NSE, Willmott's d, persistence index, bias and peak error (metrics.py),
+plus skill vs "no change" on MAE.
 
 Methods:
   baselines   no change; FloodWatch straight-line trend
@@ -30,8 +31,8 @@ import pandas as pd
 
 from .features import FEATURES, HORIZON_H, TARGET, build_features, clean_readings, validate_stations
 from .practice_data import make_practice_readings
-from .ensemble import MEMBER_NAMES, MEMBERS, make_member
-from .train import classification_metrics, linear_trend_prediction, regression_metrics, time_split, train_model
+from .ensemble import MEMBER_NAMES, MEMBERS, TreeEnsemble, make_member
+from .train import high_water_metrics, linear_trend_prediction, regression_metrics, time_split
 
 HERE = Path(__file__).resolve().parent.parent
 SEED = 7
@@ -75,34 +76,34 @@ def _sklearn_models(fast):
     ]
 
 
-def _sequences(feats_all, rows, mean, std):
+def _sequences(feats_all, rows, mean, std, cols):
     """For each row, the last SEQ_HOURS rows of the same station (scaled, NaN -> 0),
     zero-padded at the start when there is less history. Rows of one station are
     consecutive and in time order in build_features' output."""
-    x = ((feats_all[FEATURES] - mean) / std).fillna(0.0).to_numpy(dtype=np.float32)
+    x = ((feats_all[cols] - mean) / std).fillna(0.0).to_numpy(dtype=np.float32)
     first = feats_all.groupby("station_id").cumcount().to_numpy()  # position within station
-    out = np.zeros((len(rows), SEQ_HOURS, len(FEATURES)), dtype=np.float32)
+    out = np.zeros((len(rows), SEQ_HOURS, len(cols)), dtype=np.float32)
     for k, i in enumerate(rows.index.to_numpy()):
         n = min(SEQ_HOURS, first[i] + 1)
         out[k, SEQ_HOURS - n:] = x[i - n + 1:i + 1]
     return out
 
 
-def _recurrent(kind, train, test, feats_all, fast):
+def _recurrent(kind, train, test, feats_all, fast, cols):
     import torch
 
     torch.manual_seed(SEED)
-    mean, std = train[FEATURES].mean(), train[FEATURES].std().replace(0, 1).fillna(1)
+    mean, std = train[cols].mean(), train[cols].std().replace(0, 1).fillna(1)
     y_scale = float(train[TARGET].std()) or 1.0
-    x_tr = torch.from_numpy(_sequences(feats_all, train, mean, std))
+    x_tr = torch.from_numpy(_sequences(feats_all, train, mean, std, cols))
     y_tr = torch.from_numpy((train[TARGET].to_numpy() / y_scale).astype(np.float32))
-    x_te = torch.from_numpy(_sequences(feats_all, test, mean, std))
+    x_te = torch.from_numpy(_sequences(feats_all, test, mean, std, cols))
 
     class Net(torch.nn.Module):
         def __init__(self):
             super().__init__()
             rnn = torch.nn.LSTM if kind == "LSTM" else torch.nn.GRU
-            self.rnn = rnn(len(FEATURES), 32, batch_first=True)
+            self.rnn = rnn(len(cols), 32, batch_first=True)
             self.out = torch.nn.Linear(32, 1)
 
         def forward(self, x):
@@ -126,10 +127,8 @@ def _recurrent(kind, train, test, feats_all, fast):
 
 
 def _score(name, kind, pred, test, stations, seconds):
-    cls = classification_metrics(pred, test, stations)
     return {"name": name, "kind": kind, **regression_metrics(pred, test),
-            "alert_or_above": cls["alert_or_above"], "risk_level": cls["risk_level"],
-            "fit_seconds": round(seconds, 2)}
+            "high_water": high_water_metrics(pred, test), "fit_seconds": round(seconds, 2)}
 
 
 def compare(feats_all, stations, fast=False):
@@ -138,6 +137,7 @@ def compare(feats_all, stations, fast=False):
     train, test, cutoff = time_split(feats_all)
     if len(train) < 200 or len(test) < 50:
         raise SystemExit(f"Not enough data to compare (train={len(train)}, test={len(test)} rows)")
+    cols = [f for f in FEATURES if train[f].notna().any()]  # some methods cannot take an all-empty input
     results = [
         _score("No change (persistence)", "baseline", np.zeros(len(test)), test, stations, 0.0),
         _score("Straight-line trend (FloodWatch)", "baseline", linear_trend_prediction(test)[0],
@@ -145,8 +145,8 @@ def compare(feats_all, stations, fast=False):
     ]
     for name, kind, est in _sklearn_models(fast):
         t0 = time.perf_counter()
-        est.fit(train[FEATURES], train[TARGET])
-        pred = est.predict(test[FEATURES])
+        est.fit(train[cols], train[TARGET])
+        pred = est.predict(test[cols])
         results.append(_score(name, kind, pred, test, stations, time.perf_counter() - t0))
     for kind in ("LSTM", "GRU"):
         try:
@@ -155,20 +155,20 @@ def compare(feats_all, stations, fast=False):
             results.append({"name": kind, "kind": "neural", "skipped": "PyTorch not installed"})
             continue
         t0 = time.perf_counter()
-        pred = _recurrent(kind, train, test, feats_all, fast)
+        pred = _recurrent(kind, train, test, feats_all, fast, cols)
         results.append(_score(kind, "neural", pred, test, stations, time.perf_counter() - t0))
     for name in MEMBERS:  # each ensemble member on its own
         t0 = time.perf_counter()
-        m = make_member(name, fast).fit(train[FEATURES], train[TARGET])
+        m = make_member(name, fast).fit(train[cols], train[TARGET])
         results.append(_score(f"{MEMBER_NAMES[name]} (single model)", "ensemble member",
-                              m.predict(test[FEATURES]), test, stations, time.perf_counter() - t0))
+                              m.predict(test[cols]), test, stations, time.perf_counter() - t0))
     t0 = time.perf_counter()
-    model = train_model(train, fast=fast)
+    model = TreeEnsemble.fit(train, fast=fast, features=cols)
     results.append(_score(OURS, "ours", model.predict(test), test, stations, time.perf_counter() - t0)
                    | {"weights": model.describe()["weights"], "chosen": model.describe()["chosen"]})
     return {
         "horizon_hours": HORIZON_H,
-        "features": FEATURES,
+        "features": cols,
         "train_rows": int(len(train)),
         "test_rows": int(len(test)),
         "test_from": cutoff.isoformat(),
@@ -182,11 +182,11 @@ def _fmt(v, digits=3):
 
 def print_table(result):
     scored = sorted((m for m in result["models"] if "skipped" not in m), key=lambda m: m["mae_m"])
-    print(f"{'Method':48} {'MAE m':>7} {'RMSE m':>7} {'Acc':>6} {'Prec':>6} {'Recall':>6} {'F1':>6} {'AUC':>6}")
+    print(f"{'Method':48} {'MAE m':>7} {'RMSE m':>7} {'NSE':>6} {'d':>6} {'PI':>6} {'Bias m':>7} {'Peak m':>7}")
     for m in scored:
-        a = m["alert_or_above"]
-        print(f"{m['name']:48} {_fmt(m['mae_m']):>7} {_fmt(m['rmse_m']):>7} {_fmt(a['accuracy']):>6} "
-              f"{_fmt(a['precision']):>6} {_fmt(a['recall']):>6} {_fmt(a['f1']):>6} {_fmt(a['auc']):>6}")
+        print(f"{m['name']:48} {_fmt(m['mae_m']):>7} {_fmt(m['rmse_m']):>7} {_fmt(m['nse']):>6} "
+              f"{_fmt(m['willmott_d']):>6} {_fmt(m['persistence_index']):>6} {_fmt(m['bias_m']):>7} "
+              f"{_fmt(m['peak_error_m']):>7}")
     for m in result["models"]:
         if "skipped" in m:
             print(f"{m['name']:48} skipped: {m['skipped']}")

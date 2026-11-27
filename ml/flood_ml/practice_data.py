@@ -52,3 +52,29 @@ def make_practice_readings(stations, end, days=120, seed=7):
         keep[-24:] = True  # full last day, so every input of the latest forecast has a value
         frames.append(df[keep])
     return pd.concat(frames, ignore_index=True)
+
+
+def make_practice_weather(raw, every_h=6, noise=0.3, seed=7):
+    """PRACTICE Open-Meteo forecasts in the logged format (load_weather()["openmeteo"]):
+    every `every_h` hours a 72-hour forecast for each station, made from the station's
+    own practice rain in those hours with multiplicative noise (so it is informative
+    but not perfect). Nothing here is real."""
+    rng = np.random.default_rng(seed)
+    df = raw[["station_id", "time", "rainfall_mm"]].copy()
+    df["time"] = pd.to_datetime(df["time"], utc=True)
+    rows = []
+    for sid, g in df.groupby("station_id"):
+        rain = g.set_index("time")["rainfall_mm"].clip(lower=0).resample("1h").sum()
+        # the practice future after the last reading: dry, so the latest hour has a full forecast too
+        rain = rain.reindex(pd.date_range(rain.index[0], rain.index[-1] + pd.Timedelta(hours=72), freq="h"),
+                            fill_value=0.0)
+        issues = rain.index[:-72][::every_h].append(rain.index[-73:-72])
+        for t in issues:
+            ahead = rain[(rain.index > t) & (rain.index <= t + pd.Timedelta(hours=72))]
+            fc = ahead.to_numpy() * rng.lognormal(0, noise, len(ahead))
+            rows.append(pd.DataFrame({
+                "station_code": sid, "issued_at": t, "valid_at": ahead.index,
+                "precip_mm": np.round(fc, 2), "prob_pct": np.where(fc >= 0.1, 88.0, 12.0),
+                "n_models": 8, "om_prob_pct": np.nan}))
+    om = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    return {"openmeteo": om, "met": pd.DataFrame(), "met_warning": pd.DataFrame()}

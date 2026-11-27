@@ -17,6 +17,12 @@ Weights: each model is first trained on the older part of the training data
 and scored (MAE) on the newest part ("validation", never the test set).
 Weight = (1 / validation MAE), normalised to sum to 1.
 
+Monotone inputs: more forecast rain may only raise the forecast, never lower it
+(weather.RAISES_ONLY, enforced inside every tree model). With few days of data a
+forecast input is otherwise used as a "which day was it" label (on one day every
+station gets nearly the same forecast), which fits the training days but not new ones.
+The constraint also keeps the TreeSHAP reasons physically sensible.
+
 Decision rule: the weighted ensemble is kept only if its validation MAE is lower
 than that of the best single model; otherwise that model is used on its own
 (weight 1). On practice data the best single model often matches the ensemble,
@@ -32,6 +38,7 @@ import pandas as pd
 import xgboost as xgb
 
 from .features import FEATURES, HORIZON_H, TARGET
+from .weather import RAISES_ONLY
 
 SEED = 7
 XGB_PARAMS = {
@@ -62,12 +69,19 @@ MEMBER_NAMES = {
 }
 
 
+def monotone(columns):
+    """+1 for inputs in RAISES_ONLY, else 0, in column order."""
+    return [1 if c in RAISES_ONLY else 0 for c in columns]
+
+
 class _Xgb:
     def __init__(self, params, rounds):
         self.params, self.rounds, self.booster = params, rounds, None
 
     def fit(self, x, y):
-        self.booster = xgb.train(self.params, xgb.DMatrix(x, label=y), self.rounds)
+        mono = monotone(x.columns)
+        params = self.params | ({"monotone_constraints": "(" + ",".join(map(str, mono)) + ")"} if any(mono) else {})
+        self.booster = xgb.train(params, xgb.DMatrix(x, label=y), self.rounds)
         return self
 
     def predict(self, x):
@@ -89,6 +103,9 @@ class _Lgbm:
         params = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 15,
                   "min_data_in_leaf": 20, "bagging_fraction": 0.8, "bagging_freq": 1,
                   "feature_fraction": 0.9, "seed": SEED, "deterministic": True, "verbose": -1}
+        mono = monotone(x.columns)
+        if any(mono):
+            params["monotone_constraints"] = mono
         self.booster = lgb.train(params, lgb.Dataset(x, label=y), self.rounds)
         return self
 
@@ -110,7 +127,8 @@ class _Cat:
         from catboost import CatBoostRegressor
         self.model = CatBoostRegressor(iterations=self.rounds, depth=6, learning_rate=0.05,
                                        random_seed=SEED, verbose=False, allow_writing_files=False,
-                                       thread_count=-1)
+                                       thread_count=-1,
+                                       monotone_constraints=monotone(x.columns) if any(monotone(x.columns)) else None)
         self.model.fit(x, y)
         return self
 
@@ -138,36 +156,43 @@ def make_member(name, fast=False):
     raise ValueError(name)
 
 
-def validation_split(train, fraction=0.2):
+def validation_split(train, fraction=0.2, horizon_h=HORIZON_H):
     """Newest `fraction` of the training hours become validation rows; older
-    rows whose 3-hour target reaches into validation are dropped."""
+    rows whose target (horizon_h hours ahead) reaches into validation are dropped."""
     cutoff = train["time"].quantile(1 - fraction)
-    inner = train[train["time"] + pd.Timedelta(hours=HORIZON_H) < cutoff]
+    inner = train[train["time"] + pd.Timedelta(hours=horizon_h) < cutoff]
     val = train[train["time"] >= cutoff]
     return inner, val
 
 
 class TreeEnsemble:
     """Weighted average of tree models; predict() and contributions() take a
-    DataFrame with FEATURES columns."""
+    DataFrame with the model's `features` columns (FEATURES unless chosen otherwise:
+    rain_evidence.py also trains one without the weather forecast, and one per
+    longer horizon with a peak-rise target)."""
 
-    def __init__(self, members, weights, validation_mae=None, ensemble_validation_mae=None, chosen=ENSEMBLE):
+    def __init__(self, members, weights, validation_mae=None, ensemble_validation_mae=None, chosen=ENSEMBLE,
+                 features=None, target=TARGET, horizon_h=HORIZON_H):
         self.members = members  # {name: fitted member}, only the chosen ones
         self.weights = weights  # {name: weight}, sums to 1
         self.validation_mae = validation_mae or {}  # {member name: MAE on validation}
         self.ensemble_validation_mae = ensemble_validation_mae
         self.chosen = chosen  # ENSEMBLE or the name of the single member used
+        self.features = list(features or FEATURES)
+        self.target, self.horizon_h = target, horizon_h
 
     @classmethod
-    def fit(cls, train, fast=False, members=MEMBERS):
-        inner, val = validation_split(train)
+    def fit(cls, train, fast=False, members=MEMBERS, features=None, target=TARGET, horizon_h=HORIZON_H):
+        features = list(features or FEATURES)
+        TARGET_, FEATURES_ = target, features  # noqa: N806 - names as in the rest of the file
+        inner, val = validation_split(train, horizon_h=horizon_h)
         val_mae, ens_mae, chosen = {}, None, ENSEMBLE
         if len(inner) >= 100 and len(val) >= 30:
-            y = val[TARGET].to_numpy(dtype=float)
+            y = val[TARGET_].to_numpy(dtype=float)
             val_pred = {}
             for name in members:
-                m = make_member(name, fast).fit(inner[FEATURES], inner[TARGET])
-                val_pred[name] = np.asarray(m.predict(val[FEATURES]), dtype=float)
+                m = make_member(name, fast).fit(inner[FEATURES_], inner[TARGET_])
+                val_pred[name] = np.asarray(m.predict(val[FEATURES_]), dtype=float)
                 val_mae[name] = float(np.mean(np.abs(val_pred[name] - y)))
             inv = {n: 1.0 / max(e, 1e-6) for n, e in val_mae.items()}
             weights = {n: v / sum(inv.values()) for n, v in inv.items()}
@@ -177,17 +202,17 @@ class TreeEnsemble:
                 weights, chosen = {best: 1.0}, best
         else:  # too little data to judge: equal weights
             weights = {n: 1.0 / len(members) for n in members}
-        fitted = {n: make_member(n, fast).fit(train[FEATURES], train[TARGET]) for n in weights}
-        return cls(fitted, weights, val_mae, ens_mae, chosen)
+        fitted = {n: make_member(n, fast).fit(train[FEATURES_], train[TARGET_]) for n in weights}
+        return cls(fitted, weights, val_mae, ens_mae, chosen, features, target, horizon_h)
 
     def predict(self, x):
-        x = x[FEATURES]
+        x = x[self.features]
         return sum(w * np.asarray(self.members[n].predict(x), dtype=float) for n, w in self.weights.items())
 
     def contributions(self, x):
-        """(rows, len(FEATURES) + 1): per-input impact in metres, last column the
+        """(rows, len(self.features) + 1): per-input impact in metres, last column the
         base value. Each row adds up exactly to predict()."""
-        x = x[FEATURES]
+        x = x[self.features]
         return sum(w * np.asarray(self.members[n].contributions(x), dtype=float)
                    for n, w in self.weights.items())
 
@@ -203,6 +228,9 @@ class TreeEnsemble:
             "validation_mae_m": {name(n): round(e, 4) for n, e in self.validation_mae.items()},
             "ensemble_validation_mae_m": (None if self.ensemble_validation_mae is None
                                           else round(self.ensemble_validation_mae, 4)),
+            "target": self.target,
+            "horizon_hours": self.horizon_h,
+            "inputs": len(self.features),
         }
 
     def save(self, out_dir):

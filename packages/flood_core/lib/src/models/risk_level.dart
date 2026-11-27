@@ -13,7 +13,9 @@ enum RiskLevel {
 }
 
 /// Rainfall intensity bands (mm per hour).
-/// PROVISIONAL cut-offs (10 / 30 / 60): confirm against MetMalaysia before the report.
+/// PROVISIONAL cut-offs (10 / 30 / 60 mm per HOUR): not yet confirmed against MetMalaysia.
+/// Daily forecast rain uses the ETCCDI bands instead (1 / 10 / 20 mm a day, DailyRainBand
+/// in rain_outlook.dart; docs/references.md).
 enum RainIntensity {
   none,
   light,
